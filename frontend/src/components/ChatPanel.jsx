@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, Star, SlidersHorizontal, ChevronDown, Plus, ArrowUp, Sparkles, Cpu, Wrench } from 'lucide-react';
+import { Menu, Star, SlidersHorizontal, ChevronDown, Plus, ArrowUp, Sparkles, Cpu, Wrench, Eye } from 'lucide-react';
 
 export default function ChatPanel({
   activeProject,
@@ -11,6 +11,7 @@ export default function ChatPanel({
   onToggleSidebar,
   onOpenTaskWizard,
   onOpenConfig,
+  onOpenLivePreview,
 }) {
   const [prompt, setPrompt] = useState('');
   const [selectedModel, setSelectedModel] = useState('Claude 3.5 Sonnet');
@@ -122,6 +123,14 @@ export default function ChatPanel({
         </div>
 
         <div className="flex items-center space-x-3">
+          <button
+            onClick={onOpenLivePreview}
+            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-700/80 hover:bg-emerald-600 rounded-lg transition-colors shadow-xs"
+            title="Open Daytona Sandbox Live Preview"
+          >
+            <Eye className="w-3.5 h-3.5 text-emerald-300" />
+            <span>Live Preview</span>
+          </button>
           <button
             onClick={() => setIsStarred(!isStarred)}
             className="p-1.5 rounded-lg hover:bg-[#2c2c2c] transition-colors"

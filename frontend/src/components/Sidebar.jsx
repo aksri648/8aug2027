@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Folder, Terminal, FileText, GitBranch, MessageSquare, Plus, Bot, Settings, Trash2 } from 'lucide-react';
+import { Sparkles, Folder, Terminal, FileText, GitBranch, MessageSquare, Plus, Bot, Settings, Trash2, Eye } from 'lucide-react';
 
 export default function Sidebar({
   projects = [],
@@ -128,6 +128,14 @@ export default function Sidebar({
           <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-2 mb-1">
             Workspace Tools
           </div>
+
+          <button
+            onClick={() => onOpenModal('preview')}
+            className="w-full flex items-center space-x-3 px-3 py-1.5 text-xs font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 hover:bg-emerald-900/40 rounded-lg transition-colors"
+          >
+            <Eye className="w-4 h-4 text-emerald-400" />
+            <span>Live Sandbox Preview</span>
+          </button>
 
           <button
             onClick={() => onOpenModal('skills')}

@@ -9,6 +9,7 @@ import GitDiffModal from './components/modals/GitDiffModal';
 import SecretPromptModal from './components/modals/SecretPromptModal';
 import ConfigModal from './components/modals/ConfigModal';
 import TaskWizardModal from './components/modals/TaskWizardModal';
+import LivePreviewModal from './components/modals/LivePreviewModal';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -17,7 +18,7 @@ export default function App() {
   const [projects, setProjects] = useState([]);
   const [messages, setMessages] = useState([]);
   const [uncommittedFiles, setUncommittedFiles] = useState([]);
-  const [openModal, setOpenModal] = useState(null); // 'skills' | 'projects' | 'terminal' | 'files' | 'config' | 'wizard'
+  const [openModal, setOpenModal] = useState(null); // 'skills' | 'projects' | 'terminal' | 'files' | 'config' | 'wizard' | 'preview'
   const [diffFilePath, setDiffFilePath] = useState(null);
   const [secretModalOpen, setSecretModalOpen] = useState(false);
   const [secretType, setSecretType] = useState('github_pat');
@@ -253,6 +254,7 @@ export default function App() {
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
         onOpenTaskWizard={() => setOpenModal('wizard')}
         onOpenConfig={() => setOpenModal('config')}
+        onOpenLivePreview={() => setOpenModal('preview')}
       />
 
       {/* Modals */}
@@ -299,6 +301,13 @@ export default function App() {
         onExecuteAgentTask={(promptText) => {
           handleSendMessage(promptText);
         }}
+      />
+
+      <LivePreviewModal
+        isOpen={openModal === 'preview'}
+        onClose={() => setOpenModal(null)}
+        activeProjectID={activeProjectID}
+        activeProject={activeProject}
       />
 
       <SecretPromptModal
