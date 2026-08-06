@@ -111,6 +111,10 @@ func (s *Server) setupRoutes() {
 		r.Get("/projects/{projectId}/secrets", s.handleGetSecrets)
 		r.Post("/projects/{projectId}/secrets", s.handleSaveSecret)
 
+		// LLM Providers Discovery & Connection Testing
+		r.Post("/providers/test", s.handleTestProviderConnection)
+		r.Post("/providers/discover", s.handleDiscoverModels)
+
 		// Jobs
 		r.Get("/jobs/{jobId}", s.handleGetJob)
 
@@ -646,6 +650,137 @@ func (s *Server) handleServeSandboxApp(w http.ResponseWriter, r *http.Request) {
 </html>`, appName, appName, len(sb.Files), sb.ID, appName)
 
 	w.Write([]byte(html))
+}
+
+func (s *Server) handleTestProviderConnection(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		BaseURL string `json:"base_url"`
+		APIKey  string `json:"api_key"`
+		Model   string `json:"model"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	if body.BaseURL == "" {
+		body.BaseURL = "http://localhost:8000/v1"
+	}
+
+	start := time.Now()
+	modelsURL := strings.TrimRight(body.BaseURL, "/") + "/models"
+
+	req, err := http.NewRequest("GET", modelsURL, nil)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "failed",
+			"error":   fmt.Sprintf("Failed to build HTTP request: %v", err),
+			"latency": time.Since(start).Milliseconds(),
+		})
+		return
+	}
+
+	if body.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+body.APIKey)
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	latency := time.Since(start).Milliseconds()
+
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":  "failed",
+			"error":   fmt.Sprintf("Network connection failed: %v", err),
+			"latency": latency,
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":      "success",
+			"message":     fmt.Sprintf("Connection successful! Server responded with HTTP %d.", resp.StatusCode),
+			"latency":     latency,
+			"status_code": resp.StatusCode,
+		})
+	} else {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":      "failed",
+			"error":       fmt.Sprintf("Server returned status HTTP %d", resp.StatusCode),
+			"latency":     latency,
+			"status_code": resp.StatusCode,
+		})
+	}
+}
+
+func (s *Server) handleDiscoverModels(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		BaseURL string `json:"base_url"`
+		APIKey  string `json:"api_key"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	if body.BaseURL == "" {
+		body.BaseURL = "http://localhost:8000/v1"
+	}
+
+	modelsURL := strings.TrimRight(body.BaseURL, "/") + "/models"
+	req, err := http.NewRequest("GET", modelsURL, nil)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if body.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+body.APIKey)
+	}
+
+	client := &http.Client{Timeout: 6 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status": "fallback",
+			"models": []string{
+				"custom-llm-v1",
+				"llama-3.3-70b-instruct",
+				"deepseek-r1-distill-qwen-32b",
+				"mistral-large-2411",
+				"qwen-2.5-coder-32b-instruct",
+			},
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	var modelsResp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err == nil && len(modelsResp.Data) > 0 {
+		modelNames := make([]string, 0)
+		for _, m := range modelsResp.Data {
+			if m.ID != "" {
+				modelNames = append(modelNames, m.ID)
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status": "success",
+			"models": modelNames,
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "fallback",
+		"models": []string{
+			"custom-llm-v1",
+			"llama-3.3-70b-instruct",
+			"deepseek-r1-distill-qwen-32b",
+			"mistral-large-2411",
+			"qwen-2.5-coder-32b-instruct",
+		},
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
