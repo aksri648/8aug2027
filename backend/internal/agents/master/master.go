@@ -32,6 +32,67 @@ func NewMasterAgent(s *store.Store, dc *shared.DaytonaClient) *MasterAgent {
 	}
 }
 
+// Tool definitions for LLM function calling
+type ToolCall struct {
+	ID        string          `json:"id"`
+	Name      string          `json:"name"` // read_file, write_file, run_command, git_commit
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+type ToolResult struct {
+	ToolCallID string `json:"tool_call_id"`
+	Output     string `json:"output"`
+	Error      string `json:"error,omitempty"`
+}
+
+func (m *MasterAgent) ExecuteTool(projectID string, tc ToolCall) (*ToolResult, error) {
+	sb := m.daytonaClient.GetOrCreateSandbox(projectID)
+
+	switch tc.Name {
+	case "read_file":
+		var args struct {
+			Path string `json:"path"`
+		}
+		_ = json.Unmarshal(tc.Arguments, &args)
+		content, err := sb.ReadFile(args.Path)
+		if err != nil {
+			return &ToolResult{ToolCallID: tc.ID, Error: err.Error()}, nil
+		}
+		return &ToolResult{ToolCallID: tc.ID, Output: content}, nil
+
+	case "write_file":
+		var args struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		_ = json.Unmarshal(tc.Arguments, &args)
+		sb.WriteFile(args.Path, args.Content)
+		return &ToolResult{ToolCallID: tc.ID, Output: fmt.Sprintf("Successfully wrote %d bytes to %s", len(args.Content), args.Path)}, nil
+
+	case "run_command":
+		var args struct {
+			Command string `json:"command"`
+		}
+		_ = json.Unmarshal(tc.Arguments, &args)
+		output, err := m.daytonaClient.ExecRemoteCommand("", "", sb.ID, args.Command)
+		if err != nil {
+			return &ToolResult{ToolCallID: tc.ID, Error: err.Error()}, nil
+		}
+		return &ToolResult{ToolCallID: tc.ID, Output: output}, nil
+
+	case "git_commit":
+		var args struct {
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(tc.Arguments, &args)
+		sb.ClearGitStatus()
+		return &ToolResult{ToolCallID: tc.ID, Output: fmt.Sprintf("Git commit created: '%s'", args.Message)}, nil
+
+	default:
+		return &ToolResult{ToolCallID: tc.ID, Error: "unknown tool"}, nil
+	}
+}
+
 // ClassifyIntent analyzes the user prompt and conversation history
 func (m *MasterAgent) ClassifyIntent(prompt string) Intent {
 	lower := strings.ToLower(prompt)
