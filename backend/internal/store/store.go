@@ -54,6 +54,15 @@ func NewStore() *Store {
 		log.Fatalf("Fatal: failed to initialize database store: %v", err)
 	}
 
+	// Configure DB Connection Pooling
+	sqlDB, err := db.DB()
+	if err == nil {
+		sqlDB.SetMaxOpenConns(25)
+		sqlDB.SetMaxIdleConns(10)
+		sqlDB.SetConnMaxLifetime(5 * time.Minute)
+		log.Println("⚡ Configured Database Connection Pool (MaxOpen: 25, MaxIdle: 10, Lifetime: 5m)")
+	}
+
 	// Run GORM AutoMigrations
 	err = db.AutoMigrate(
 		&models.User{},
