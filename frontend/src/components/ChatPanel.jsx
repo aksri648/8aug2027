@@ -85,13 +85,6 @@ export default function ChatPanel({
           >
             <Menu className="w-5 h-5" />
           </button>
-          
-          <button
-            onClick={() => onNewChat()}
-            className="text-sm font-medium text-gray-200 hover:text-white hover:bg-[#2c2c2c] px-3 py-1.5 rounded-lg transition-colors"
-          >
-            New Chat
-          </button>
 
           {/* Model Selector Dropdown */}
           <div className="relative">
