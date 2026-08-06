@@ -58,6 +58,8 @@ func (s *Server) Router() http.Handler {
 }
 
 func (s *Server) setupRoutes() {
+	s.router.Use(middleware.RequestID)
+	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Logger)
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(cors.Handler(cors.Options{
