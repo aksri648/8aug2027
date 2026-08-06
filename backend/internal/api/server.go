@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/saas-agent-platform/backend/internal/agents/appdeveloper"
 	"github.com/saas-agent-platform/backend/internal/agents/appdeployer"
 	"github.com/saas-agent-platform/backend/internal/agents/appmaintainer"
@@ -24,15 +25,15 @@ import (
 )
 
 type Server struct {
-	router      *chi.Mux
-	store       *store.Store
+	router        *chi.Mux
+	store         *store.Store
 	daytonaClient *shared.DaytonaClient
-	masterAgent *master.MasterAgent
-	appDevAgent *appdeveloper.AppDeveloperAgent
-	appDepAgent *appdeployer.AppDeployerAgent
-	llmDepAgent *llmdeployer.LLMDeployerAgent
+	masterAgent   *master.MasterAgent
+	appDevAgent   *appdeveloper.AppDeveloperAgent
+	appDepAgent   *appdeployer.AppDeployerAgent
+	llmDepAgent   *llmdeployer.LLMDeployerAgent
 	appMaintAgent *appmaintainer.AppMaintainerAgent
-	hub         *Hub
+	hub           *Hub
 }
 
 func NewServer(s *store.Store, dc *shared.DaytonaClient) *Server {
@@ -67,6 +68,10 @@ func (s *Server) setupRoutes() {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+
+	// Prometheus Metrics Endpoints
+	s.router.Get("/metrics", http.HandlerFunc(promhttp.Handler().ServeHTTP))
+	s.router.Get("/api/v1/metrics", http.HandlerFunc(promhttp.Handler().ServeHTTP))
 
 	s.router.Route("/api/v1", func(r chi.Router) {
 		// Auth
