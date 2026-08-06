@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Folder, Plus, Check, GitBranch, Calendar } from 'lucide-react';
+import { X, Folder, Plus, Check, GitBranch, Calendar, Trash2 } from 'lucide-react';
 
 export default function ProjectsModal({ isOpen, onClose, activeProjectID, onSelectProject }) {
   const [projects, setProjects] = useState([]);
@@ -42,6 +42,18 @@ export default function ProjectsModal({ isOpen, onClose, activeProjectID, onSele
       }
     } catch (e) {
       console.error('Error creating project:', e);
+    }
+  };
+
+  const handleDeleteProject = async (e, pID) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/v1/projects/${pID}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchProjects();
+      }
+    } catch (err) {
+      console.error('Error deleting project:', err);
     }
   };
 
@@ -142,6 +154,15 @@ export default function ProjectsModal({ isOpen, onClose, activeProjectID, onSele
                     </span>
                   </div>
                 </div>
+
+                {/* Delete Project Action */}
+                <button
+                  onClick={(e) => handleDeleteProject(e, p.id)}
+                  className="p-1.5 text-gray-500 hover:text-rose-400 hover:bg-[#2c2c2c] rounded-lg transition-colors ml-4"
+                  title="Delete Project"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             );
           })}

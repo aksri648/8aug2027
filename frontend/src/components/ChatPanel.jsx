@@ -8,6 +8,9 @@ export default function ChatPanel({
   streamingMessage,
   systemStatusEvents,
   onNewChat,
+  onToggleSidebar,
+  onOpenTaskWizard,
+  onOpenConfig,
 }) {
   const [prompt, setPrompt] = useState('');
   const [selectedModel, setSelectedModel] = useState('Claude 3.5 Sonnet');
@@ -15,11 +18,13 @@ export default function ChatPanel({
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
+  const customModelName = localStorage.getItem('cfg_custom_openai_model') || 'Custom OpenAI Endpoint';
   const modelsList = [
     'Claude 3.5 Sonnet',
     'Claude 3 Opus',
     'DeepSeek R1 (vLLM)',
     'Meta Llama 3.3 70B (NIM)',
+    `Custom (${customModelName})`,
   ];
 
   const suggestionChips = [
@@ -65,12 +70,18 @@ export default function ChatPanel({
     }
   };
 
+  const [isStarred, setIsStarred] = useState(false);
+
   return (
     <div className="flex-1 h-full bg-[#232323] flex flex-col justify-between overflow-hidden relative text-gray-100">
       {/* Top Bar matching PNG exactly */}
       <header className="h-14 px-6 border-b border-[#2d2d2d] flex items-center justify-between bg-[#1e1e1e] shrink-0">
         <div className="flex items-center space-x-4">
-          <button className="text-gray-300 hover:text-white p-1 rounded-md hover:bg-[#2c2c2c] transition-colors">
+          <button
+            onClick={onToggleSidebar}
+            className="text-gray-300 hover:text-white p-1.5 rounded-md hover:bg-[#2c2c2c] transition-colors"
+            title="Toggle Sidebar"
+          >
             <Menu className="w-5 h-5" />
           </button>
           
@@ -87,7 +98,7 @@ export default function ChatPanel({
               onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
               className="flex items-center space-x-1 text-sm font-medium text-gray-200 hover:text-white px-2.5 py-1.5 rounded-lg hover:bg-[#2c2c2c] transition-colors"
             >
-              <span>Claude</span>
+              <span>{selectedModel}</span>
               <ChevronDown className="w-4 h-4 text-gray-400" />
             </button>
 
@@ -111,10 +122,25 @@ export default function ChatPanel({
         </div>
 
         <div className="flex items-center space-x-3">
-          <button className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-[#2c2c2c] transition-colors">
-            <Star className="w-4 h-4" />
+          <button
+            onClick={() => setIsStarred(!isStarred)}
+            className="p-1.5 rounded-lg hover:bg-[#2c2c2c] transition-colors"
+            title={isStarred ? "Unstar Chat Session" : "Star Chat Session"}
+          >
+            <Star className={`w-4 h-4 ${isStarred ? 'fill-amber-400 text-amber-400' : 'text-gray-400 hover:text-white'}`} />
           </button>
-          <button className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-[#2c2c2c] transition-colors">
+          <button
+            onClick={onOpenTaskWizard}
+            className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-[#2c2c2c] transition-colors"
+            title="Agent Task Execution Wizard"
+          >
+            <Wrench className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onOpenConfig}
+            className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-[#2c2c2c] transition-colors"
+            title="Platform Configuration Setup"
+          >
             <SlidersHorizontal className="w-4 h-4" />
           </button>
           {/* User Avatar Circle */}
@@ -213,16 +239,24 @@ export default function ChatPanel({
             value={prompt}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            placeholder="Message Claude..."
+            placeholder="Message Claude or launch agent..."
             className="w-full bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none resize-none px-1"
           />
 
           <div className="flex items-center justify-between pt-1">
             <div className="flex items-center space-x-2">
-              <button className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-[#383838] transition-colors" title="Attach file">
+              <button
+                onClick={onOpenTaskWizard}
+                className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-[#383838] transition-colors"
+                title="Launch Agent Task Execution Wizard"
+              >
                 <Plus className="w-4 h-4" />
               </button>
-              <button className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-[#383838] transition-colors" title="Agent settings">
+              <button
+                onClick={onOpenConfig}
+                className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-[#383838] transition-colors"
+                title="Platform Configuration Setup"
+              >
                 <SlidersHorizontal className="w-4 h-4" />
               </button>
             </div>

@@ -7,19 +7,27 @@ import TerminalModal from './components/modals/TerminalModal';
 import FileExplorerModal from './components/modals/FileExplorerModal';
 import GitDiffModal from './components/modals/GitDiffModal';
 import SecretPromptModal from './components/modals/SecretPromptModal';
+import ConfigModal from './components/modals/ConfigModal';
+import TaskWizardModal from './components/modals/TaskWizardModal';
 
 export default function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeProjectID, setActiveProjectID] = useState('proj-default');
   const [activeProject, setActiveProject] = useState(null);
+  const [projects, setProjects] = useState([]);
   const [messages, setMessages] = useState([]);
   const [uncommittedFiles, setUncommittedFiles] = useState([]);
-  const [openModal, setOpenModal] = useState(null); // 'skills' | 'projects' | 'terminal' | 'files'
+  const [openModal, setOpenModal] = useState(null); // 'skills' | 'projects' | 'terminal' | 'files' | 'config' | 'wizard'
   const [diffFilePath, setDiffFilePath] = useState(null);
   const [secretModalOpen, setSecretModalOpen] = useState(false);
   const [secretType, setSecretType] = useState('github_pat');
   const [systemStatusEvents, setSystemStatusEvents] = useState([]);
   const [streamingMessage, setStreamingMessage] = useState('');
   const wsRef = useRef(null);
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
 
   useEffect(() => {
     fetchProjectDetail(activeProjectID);
@@ -31,6 +39,36 @@ export default function App() {
       if (wsRef.current) wsRef.current.close();
     };
   }, [activeProjectID]);
+
+  const fetchProjects = async () => {
+    try {
+      const res = await fetch('/api/v1/projects');
+      if (res.ok) {
+        const data = await res.json();
+        setProjects(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch projects:', e);
+    }
+  };
+
+  const handleCreateNewChat = async (customName) => {
+    const projectName = customName || `Chat ${projects.length + 1}`;
+    try {
+      const res = await fetch('/api/v1/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: projectName }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        await fetchProjects();
+        setActiveProjectID(created.id);
+      }
+    } catch (e) {
+      console.error('Error creating chat:', e);
+    }
+  };
 
   const fetchProjectDetail = async (pID) => {
     try {
@@ -165,14 +203,20 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#1b1b1b]">
       {/* Fixed Left Sidebar */}
-      <Sidebar
-        activeProject={activeProject}
-        uncommittedFiles={uncommittedFiles}
-        onOpenModal={(modalName) => setOpenModal(modalName)}
-        onViewDiff={(filePath) => setDiffFilePath(filePath)}
-        onUpdateProjectRemote={handleUpdateProjectRemote}
-        onPushGit={handlePushGit}
-      />
+      {sidebarOpen && (
+        <Sidebar
+          projects={projects}
+          activeProjectID={activeProjectID}
+          activeProject={activeProject}
+          uncommittedFiles={uncommittedFiles}
+          onSelectProject={(pID) => setActiveProjectID(pID)}
+          onCreateNewChat={handleCreateNewChat}
+          onOpenModal={(modalName) => setOpenModal(modalName)}
+          onViewDiff={(filePath) => setDiffFilePath(filePath)}
+          onUpdateProjectRemote={handleUpdateProjectRemote}
+          onPushGit={handlePushGit}
+        />
+      )}
 
       {/* Main Chat Panel */}
       <ChatPanel
@@ -181,6 +225,10 @@ export default function App() {
         onSendMessage={handleSendMessage}
         streamingMessage={streamingMessage}
         systemStatusEvents={systemStatusEvents}
+        onNewChat={handleCreateNewChat}
+        onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+        onOpenTaskWizard={() => setOpenModal('wizard')}
+        onOpenConfig={() => setOpenModal('config')}
       />
 
       {/* Modals */}
@@ -191,9 +239,9 @@ export default function App() {
 
       <ProjectsModal
         isOpen={openModal === 'projects'}
-        onClose={() => setOpenModal(null)}
+        onClose={() => { setOpenModal(null); fetchProjects(); }}
         activeProjectID={activeProjectID}
-        onSelectProject={(pID) => setActiveProjectID(pID)}
+        onSelectProject={(pID) => { setActiveProjectID(pID); fetchProjects(); }}
       />
 
       <TerminalModal
@@ -213,6 +261,20 @@ export default function App() {
         onClose={() => setDiffFilePath(null)}
         activeProjectID={activeProjectID}
         filePath={diffFilePath}
+      />
+
+      <ConfigModal
+        isOpen={openModal === 'config'}
+        onClose={() => setOpenModal(null)}
+      />
+
+      <TaskWizardModal
+        isOpen={openModal === 'wizard'}
+        onClose={() => setOpenModal(null)}
+        activeProject={activeProject}
+        onExecuteAgentTask={(promptText) => {
+          handleSendMessage(promptText);
+        }}
       />
 
       <SecretPromptModal
