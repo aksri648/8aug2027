@@ -74,6 +74,25 @@ export default function App() {
     }
   };
 
+  const handleDeleteProject = async (pID) => {
+    try {
+      const res = await fetch(`/api/v1/projects/${pID}`, { method: 'DELETE' });
+      if (res.ok) {
+        const remaining = projects.filter((p) => p.id !== pID);
+        setProjects(remaining);
+        if (pID === activeProjectID) {
+          if (remaining.length > 0) {
+            setActiveProjectID(remaining[0].id);
+          } else {
+            handleCreateNewChat();
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error deleting project:', e);
+    }
+  };
+
   const fetchProjectDetail = async (pID) => {
     try {
       const res = await fetch(`/api/v1/projects/${pID}`);
@@ -215,6 +234,7 @@ export default function App() {
           uncommittedFiles={uncommittedFiles}
           onSelectProject={(pID) => setActiveProjectID(pID)}
           onCreateNewChat={handleCreateNewChat}
+          onDeleteProject={handleDeleteProject}
           onOpenModal={(modalName) => setOpenModal(modalName)}
           onViewDiff={(filePath) => setDiffFilePath(filePath)}
           onUpdateProjectRemote={handleUpdateProjectRemote}

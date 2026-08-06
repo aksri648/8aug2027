@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Folder, Terminal, FileText, GitBranch, MessageSquare, Plus, Bot, Settings } from 'lucide-react';
+import { Sparkles, Folder, Terminal, FileText, GitBranch, MessageSquare, Plus, Bot, Settings, Trash2 } from 'lucide-react';
 
 export default function Sidebar({
   projects = [],
@@ -8,6 +8,7 @@ export default function Sidebar({
   uncommittedFiles = [],
   onSelectProject,
   onCreateNewChat,
+  onDeleteProject,
   onOpenModal,
   onViewDiff,
   onUpdateProjectRemote,
@@ -81,21 +82,36 @@ export default function Sidebar({
             {projects.map((p) => {
               const isActive = p.id === activeProjectID;
               return (
-                <button
+                <div
                   key={p.id}
                   onClick={() => onSelectProject(p.id)}
-                  className={`w-full flex items-center space-x-2.5 px-2.5 py-2 text-xs rounded-lg transition-colors text-left ${
+                  className={`group w-full flex items-center justify-between px-2.5 py-2 text-xs rounded-lg transition-colors cursor-pointer select-none ${
                     isActive
                       ? 'bg-[#2a221f] text-white font-medium border border-[#d97757]/40'
                       : 'text-gray-300 hover:bg-[#2c2c2c] hover:text-white'
                   }`}
                 >
-                  <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-[#d97757]' : 'text-gray-400'}`} />
-                  <span className="truncate flex-1">{p.name || 'Untitled Chat'}</span>
-                  {isActive && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#d97757] shrink-0" />
-                  )}
-                </button>
+                  <div className="flex items-center space-x-2.5 min-w-0 flex-1">
+                    <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-[#d97757]' : 'text-gray-400'}`} />
+                    <span className="truncate">{p.name || 'Untitled Chat'}</span>
+                  </div>
+
+                  <div className="flex items-center space-x-1 shrink-0 ml-1">
+                    {isActive && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#d97757] shrink-0 mr-1" />
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteProject(p.id);
+                      }}
+                      className="p-1 text-gray-500 hover:text-rose-400 hover:bg-[#383838] rounded transition-colors opacity-0 group-hover:opacity-100"
+                      title="Delete Chat"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
               );
             })}
 
