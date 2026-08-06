@@ -86,7 +86,7 @@ export default function ChatPanel({
           </button>
           
           <button
-            onClick={onNewChat}
+            onClick={() => onNewChat()}
             className="text-sm font-medium text-gray-200 hover:text-white hover:bg-[#2c2c2c] px-3 py-1.5 rounded-lg transition-colors"
           >
             New Chat

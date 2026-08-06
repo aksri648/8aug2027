@@ -53,17 +53,21 @@ export default function App() {
   };
 
   const handleCreateNewChat = async (customName) => {
-    const projectName = customName || `Chat ${projects.length + 1}`;
+    const nameStr = (typeof customName === 'string' && customName.trim()) 
+      ? customName 
+      : `Chat ${projects.length + 1}`;
+
     try {
       const res = await fetch('/api/v1/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: projectName }),
+        body: JSON.stringify({ name: nameStr }),
       });
       if (res.ok) {
         const created = await res.json();
-        await fetchProjects();
+        setMessages([]);
         setActiveProjectID(created.id);
+        await fetchProjects();
       }
     } catch (e) {
       console.error('Error creating chat:', e);
