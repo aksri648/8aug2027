@@ -157,6 +157,11 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setActiveProject(data);
+      } else if (res.status === 404) {
+        // Stale or deleted project ID: fallback to default project
+        console.warn(`Project ${pID} not found (404). Falling back to proj-default.`);
+        setActiveProjectID('proj-default');
+        fetchProjects();
       }
     } catch (e) {
       console.error('Failed to fetch project:', e);
