@@ -52,11 +52,13 @@ export default function App() {
       }
 
       if (!valid) {
+        const defaultEmail = import.meta.env.VITE_DEFAULT_USER_EMAIL || 'developer@example.com';
+        const defaultPassword = import.meta.env.VITE_DEFAULT_USER_PASSWORD || 'defaultpassword123';
         try {
           const res = await fetch('/api/v1/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: 'developer@example.com', password: 'defaultpassword123' }),
+            body: JSON.stringify({ email: defaultEmail, password: defaultPassword }),
           });
           if (res.ok) {
             const data = await res.json();

@@ -87,37 +87,24 @@ func NewStore() *Store {
 }
 
 func (s *Store) seedDefaultData() {
-	// Seed Default User
+	email := os.Getenv("DEFAULT_USER_EMAIL")
+	password := os.Getenv("DEFAULT_USER_PASSWORD")
+	if email == "" || password == "" {
+		return
+	}
+
 	var userCount int64
-	s.db.Model(&models.User{}).Where("id = ?", "user-default").Count(&userCount)
+	s.db.Model(&models.User{}).Where("email = ?", email).Count(&userCount)
 	if userCount == 0 {
-		hashed, _ := auth.HashPassword("defaultpassword123")
+		hashed, _ := auth.HashPassword(password)
 		defaultUser := &models.User{
-			ID:           "user-default",
-			Email:        "developer@example.com",
+			ID:           "user-env-" + fmt.Sprintf("%d", time.Now().UnixNano()),
+			Email:        email,
 			PasswordHash: hashed,
 			PlanTier:     "Pro Plan",
 			CreatedAt:    time.Now(),
 		}
 		s.db.Create(defaultUser)
-	}
-
-
-
-	// Seed Default Skill
-	var skillCount int64
-	s.db.Model(&models.Skill{}).Where("id = ?", "skill-1").Count(&skillCount)
-	if skillCount == 0 {
-		skill1 := &models.Skill{
-			ID:          "skill-1",
-			UserID:      "user-default",
-			Name:        "Go Microservice Conventions",
-			Description: "Enforces Chi router, structured JSON logs, and clean architecture",
-			Content:     "# Go Microservice Guidelines\n- Use `chi` router\n- Implement `/healthz`\n- Return standard JSON error responses",
-			Source:      "manual",
-			CreatedAt:   time.Now(),
-		}
-		s.db.Create(skill1)
 	}
 }
 
