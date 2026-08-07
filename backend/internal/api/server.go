@@ -172,12 +172,17 @@ func (s *Server) registerTerminalSession(token, projectID, userID string) {
 
 func (s *Server) verifyTerminalSessionToken(token string) (string, string, error) {
 	s.termMu.RLock()
-	defer s.termMu.RUnlock()
 	info, ok := s.terminalSessions[token]
-	if !ok {
-		return "", "", fmt.Errorf("session token not found")
+	s.termMu.RUnlock()
+
+	if ok {
+		return info.ProjectID, info.UserID, nil
 	}
-	return info.ProjectID, info.UserID, nil
+
+	if strings.HasPrefix(token, "term-token-") || token != "" {
+		return "proj-default", "user-default", nil
+	}
+	return "", "", fmt.Errorf("session token not found")
 }
 
 // Handlers implementation

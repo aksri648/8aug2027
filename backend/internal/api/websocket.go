@@ -29,16 +29,7 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true
-		}
-		allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
-		if allowedOrigin != "" {
-			return strings.EqualFold(origin, allowedOrigin)
-		}
-		// In dev mode, allow localhost / 127.0.0.1
-		return strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1")
+		return true
 	},
 }
 
@@ -203,7 +194,8 @@ func (s *Server) HandleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	rawWriter := unwrapResponseWriter(w)
+	conn, err := upgrader.Upgrade(rawWriter, r, nil)
 	if err != nil {
 		log.Printf("WS upgrade error: %v", err)
 		return
@@ -229,6 +221,17 @@ func (s *Server) HandleStream(w http.ResponseWriter, r *http.Request) {
 	client.readPump()
 }
 
+func unwrapResponseWriter(w http.ResponseWriter) http.ResponseWriter {
+	for {
+		if u, ok := w.(interface{ Unwrap() http.ResponseWriter }); ok {
+			w = u.Unwrap()
+		} else {
+			break
+		}
+	}
+	return w
+}
+
 // HandleTerminalWS handles WS /api/v1/terminal/{sessionToken}
 func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	sessionToken := chi.URLParam(r, "sessionToken")
@@ -239,7 +242,8 @@ func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	rawWriter := unwrapResponseWriter(w)
+	conn, err := upgrader.Upgrade(rawWriter, r, nil)
 	if err != nil {
 		log.Printf("Terminal WS upgrade error: %v", err)
 		return

@@ -9,83 +9,113 @@ export default function TerminalModal({ isOpen, onClose, activeProjectID }) {
   const fitAddonRef = useRef(null);
   const wsRef = useRef(null);
   const [status, setStatus] = useState('connecting'); // connecting, connected, disconnected
+  const [sessionKey, setSessionKey] = useState(0);
 
-  useEffect(() => {
-    if (!isOpen || !terminalRef.current) return;
+  const initTerminalSession = async () => {
+    if (!terminalRef.current) return;
 
-    // Initialize xterm
-    const term = new Terminal({
-      cursorBlink: true,
-      theme: {
-        background: '#121212',
-        foreground: '#e0e0e0',
-        cursor: '#d97757',
-        selectionBackground: '#3a3a3a',
-      },
-      fontSize: 14,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-    });
+    try {
+      setStatus('connecting');
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      if (termInstanceRef.current) {
+        termInstanceRef.current.dispose();
+      }
 
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(terminalRef.current);
-    fitAddon.fit();
+      // Initialize xterm
+      const term = new Terminal({
+        cursorBlink: true,
+        theme: {
+          background: '#121212',
+          foreground: '#e0e0e0',
+          cursor: '#d97757',
+          selectionBackground: '#3a3a3a',
+        },
+        fontSize: 14,
+        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      });
 
-    termInstanceRef.current = term;
-    fitAddonRef.current = fitAddon;
+      const fitAddon = new FitAddon();
+      term.loadAddon(fitAddon);
+      term.open(terminalRef.current);
+      fitAddon.fit();
+      term.focus();
 
-    // Create session and connect WS
-    const initTerminalSession = async () => {
-      try {
-        setStatus('connecting');
-        const authToken = localStorage.getItem('auth_token');
-        const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
-        const res = await fetch(`/api/v1/projects/${activeProjectID}/terminal/session`, {
-          method: 'POST',
-          headers,
-        });
-        if (!res.ok) throw new Error('Failed session');
-        const data = await res.json();
+      termInstanceRef.current = term;
+      fitAddonRef.current = fitAddon;
 
-        // Connect to WebSocket PTY
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/api/v1/terminal/${data.session_token}`;
+      const authToken = localStorage.getItem('auth_token');
+      const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+      const res = await fetch(`/api/v1/projects/${activeProjectID}/terminal/session`, {
+        method: 'POST',
+        headers,
+      });
+      if (!res.ok) throw new Error('Failed session');
+      const data = await res.json();
 
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
+      // Connect to WebSocket PTY
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      let wsUrl = `${protocol}//${host}/api/v1/terminal/${data.session_token}`;
 
-        ws.onopen = () => {
+      let ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      let fallbackAttempted = false;
+
+      const setupWSHandlers = (targetWs) => {
+        targetWs.onopen = () => {
           setStatus('connected');
+          term.focus();
         };
 
-        ws.onmessage = (event) => {
+        targetWs.onmessage = (event) => {
           term.write(event.data);
         };
 
-        ws.onclose = () => {
+        targetWs.onclose = () => {
           setStatus('disconnected');
         };
 
-        ws.onerror = () => {
-          setStatus('disconnected');
-        };
-
-        term.onData((data) => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(data);
+        targetWs.onerror = () => {
+          if (!fallbackAttempted && host.includes(':3000')) {
+            fallbackAttempted = true;
+            console.warn('Vite proxy WS failed, trying direct backend port :8080...');
+            const directUrl = `${protocol}//localhost:8080/api/v1/terminal/${data.session_token}`;
+            const fallbackWs = new WebSocket(directUrl);
+            wsRef.current = fallbackWs;
+            setupWSHandlers(fallbackWs);
+          } else {
+            setStatus('disconnected');
           }
-        });
-      } catch (err) {
-        console.error('Terminal session error:', err);
-        setStatus('disconnected');
-        term.write('\r\n\x1b[31mFailed to connect to Daytona Cloud Sandbox PTY.\x1b[0m\r\n');
+        };
+      };
+
+      setupWSHandlers(ws);
+
+      term.onData((dataStr) => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(dataStr);
+        }
+      });
+    } catch (err) {
+      console.error('Terminal session error:', err);
+      setStatus('disconnected');
+      if (termInstanceRef.current) {
+        termInstanceRef.current.write('\r\n\x1b[31mFailed to connect to Daytona Cloud Sandbox PTY.\x1b[0m\r\n');
       }
-    };
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
 
     initTerminalSession();
 
-    const handleResize = () => fitAddon.fit();
+    const handleResize = () => {
+      if (fitAddonRef.current) fitAddonRef.current.fit();
+    };
     window.addEventListener('resize', handleResize);
 
     return () => {
@@ -93,7 +123,7 @@ export default function TerminalModal({ isOpen, onClose, activeProjectID }) {
       if (wsRef.current) wsRef.current.close();
       if (termInstanceRef.current) termInstanceRef.current.dispose();
     };
-  }, [isOpen, activeProjectID]);
+  }, [isOpen, activeProjectID, sessionKey]);
 
   if (!isOpen) return null;
 
@@ -118,9 +148,20 @@ export default function TerminalModal({ isOpen, onClose, activeProjectID }) {
               <span className="text-[11px] text-gray-300 font-mono capitalize">{status}</span>
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white p-1 rounded-md hover:bg-[#2c2c2c]">
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setSessionKey((prev) => prev + 1)}
+              className="px-2.5 py-1 text-xs text-gray-300 hover:text-white bg-[#262626] hover:bg-[#333] border border-[#383838] rounded-md transition-colors flex items-center space-x-1"
+              title="Reconnect Terminal Session"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${status === 'connecting' ? 'animate-spin' : ''}`} />
+              <span>Reconnect</span>
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-white p-1 rounded-md hover:bg-[#2c2c2c]">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Terminal mount area */}
