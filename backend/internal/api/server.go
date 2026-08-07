@@ -994,6 +994,17 @@ func (s *Server) handleServeSandboxNoVNC(w http.ResponseWriter, r *http.Request)
 
 	sb := s.daytonaClient.GetOrCreateSandbox(pID)
 
+	targetVncURL := os.Getenv("DAYTONA_NOVNC_URL")
+	if targetVncURL == "" {
+		serverURL := os.Getenv("DAYTONA_SERVER_URL")
+		if serverURL != "" {
+			trimmed := strings.TrimRight(serverURL, "/")
+			targetVncURL = fmt.Sprintf("%s/api/workspace/%s/novnc/vnc.html?autoconnect=true", trimmed, sb.ID)
+		} else {
+			targetVncURL = fmt.Sprintf("https://app.daytona.io/api/workspace/%s/novnc/vnc.html?autoconnect=true", sb.ID)
+		}
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
@@ -1006,13 +1017,16 @@ func (s *Server) handleServeSandboxNoVNC(w http.ResponseWriter, r *http.Request)
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f8fafc; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         .vnc-bar { background: #111827; border-b: 1px solid #1f2937; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
         .vnc-pill { display: inline-flex; align-items: center; gap: 6px; background: #064e3b; color: #34d399; padding: 3px 10px; border-radius: 9999px; font-weight: 600; font-size: 11px; }
-        .vnc-viewport { flex: 1; display: flex; align-items: center; justify-content: center; background: #030712; position: relative; }
-        .vnc-box { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 28px; max-width: 580px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
-        .vnc-box h2 { font-size: 20px; margin-bottom: 8px; color: #ffffff; }
-        .vnc-box p { font-size: 13px; color: #94a3b8; margin-bottom: 18px; line-height: 1.5; }
-        .vnc-url { background: #0f172a; border: 1px solid #334155; padding: 10px; border-radius: 8px; font-family: monospace; font-size: 12px; color: #38bdf8; word-break: break-all; margin-bottom: 18px; }
-        .vnc-btn { background: #0284c7; color: white; border: none; padding: 8px 18px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 12px; }
-        .vnc-btn:hover { background: #0369a1; }
+        .vnc-viewport { flex: 1; display: flex; align-items: center; justify-content: center; background: #030712; position: relative; p-4; }
+        .vnc-box { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 32px; max-width: 600px; width: 100%%; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); }
+        .vnc-box h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; color: #ffffff; }
+        .vnc-box p { font-size: 13px; color: #94a3b8; margin-bottom: 20px; line-height: 1.5; }
+        .vnc-url { background: #0f172a; border: 1px solid #334155; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 11px; color: #38bdf8; word-break: break-all; margin-bottom: 20px; text-align: left; }
+        .btn-group { display: flex; gap: 12px; justify-content: center; }
+        .vnc-btn-primary { background: #d97757; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: background 0.2s; }
+        .vnc-btn-primary:hover { background: #c26243; }
+        .vnc-btn-sec { background: #334155; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; transition: background 0.2s; }
+        .vnc-btn-sec:hover { background: #475569; }
     </style>
 </head>
 <body>
@@ -1022,18 +1036,28 @@ func (s *Server) handleServeSandboxNoVNC(w http.ResponseWriter, r *http.Request)
             <span style="color:#4b5563;">|</span>
             <span style="font-family:monospace;color:#9ca3af;">Workspace ID: %s</span>
         </div>
-        <div style="font-family:monospace;color:#9ca3af;">Port: 6080 (noVNC VNC Web Client)</div>
+        <div style="font-family:monospace;color:#9ca3af;">Port: 6080 (noVNC / Display :0)</div>
     </div>
     <div class="vnc-viewport">
         <div class="vnc-box">
-            <h2>🖥️ Daytona Sandbox Live noVNC Screen</h2>
-            <p>Live interactive graphical desktop stream and display buffer for Daytona Sandbox <strong>%s</strong> (Project: %s).</p>
-            <div class="vnc-url">http://localhost:6080/vnc.html?autoconnect=true&resize=remote</div>
-            <button class="vnc-btn" onclick="location.reload()">🔄 Connect noVNC Stream</button>
+            <h2>🖥️ Daytona Sandbox noVNC Live Desktop Stream</h2>
+            <p>Live interactive graphical desktop display buffer for Daytona Cloud Sandbox <strong>%s</strong> (Project: %s).</p>
+            
+            <div class="vnc-url">
+                <div style="color:#64748b; font-size:10px; margin-bottom:4px; font-family:sans-serif;">TARGET NOVNC URL:</div>
+                %s
+            </div>
+
+            <div class="btn-group">
+                <a href="%s" target="_blank" rel="noreferrer" class="vnc-btn-primary">
+                    <span>🚀 Launch Daytona noVNC (New Tab)</span>
+                </a>
+                <button class="vnc-btn-sec" onclick="location.reload()">🔄 Refresh Stream</button>
+            </div>
         </div>
     </div>
 </body>
-</html>`, p.Name, sb.ID, sb.ID, p.Name)
+</html>`, p.Name, sb.ID, sb.ID, p.Name, targetVncURL, targetVncURL)
 	w.Write([]byte(html))
 }
 
