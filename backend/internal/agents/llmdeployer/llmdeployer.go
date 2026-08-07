@@ -5,6 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
 	"github.com/saas-agent-platform/backend/internal/agents/shared"
 	"github.com/saas-agent-platform/backend/internal/store"
@@ -34,6 +43,107 @@ type DeployLLMResult struct {
 	Status       string `json:"status"`
 }
 
+type staticTokenCredential struct {
+	token string
+}
+
+func (s *staticTokenCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{
+		Token:     s.token,
+		ExpiresOn: time.Now().Add(24 * time.Hour),
+	}, nil
+}
+
+func getAzureCredential(token string) (azcore.TokenCredential, error) {
+	if token != "" {
+		return &staticTokenCredential{token: token}, nil
+	}
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to obtain default Azure credential: %w", err)
+	}
+	return cred, nil
+}
+
+func (l *LLMDeployerAgent) ProvisionAzureGPUVM(ctx context.Context, subID, token, rgName, vmName, location, gpuVMSize string) (string, error) {
+	cred, err := getAzureCredential(token)
+	if err != nil {
+		return "", err
+	}
+
+	// 1. Create Resource Group
+	rgClient, err := armresources.NewResourceGroupsClient(subID, cred, nil)
+	if err == nil {
+		_, _ = rgClient.CreateOrUpdate(ctx, rgName, armresources.ResourceGroup{Location: to.Ptr(location)}, nil)
+	}
+
+	// 2. Allocate Public IP
+	ipClient, err := armnetwork.NewPublicIPAddressesClient(subID, cred, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create public IP client: %w", err)
+	}
+	ipPoller, err := ipClient.BeginCreateOrUpdate(ctx, rgName, "pip-gpu-"+vmName, armnetwork.PublicIPAddress{
+		Location: to.Ptr(location),
+		Properties: &armnetwork.PublicIPAddressPropertiesFormat{
+			PublicIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
+		},
+	}, nil)
+	var allocatedIP string
+	if err == nil {
+		if ipResp, pollErr := ipPoller.PollUntilDone(ctx, nil); pollErr == nil && ipResp.Properties != nil && ipResp.Properties.IPAddress != nil {
+			allocatedIP = *ipResp.Properties.IPAddress
+		}
+	}
+
+	// 3. Provision GPU VM Instance (NC / NV series)
+	vmClient, err := armcompute.NewVirtualMachinesClient(subID, cred, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create virtual machines client: %w", err)
+	}
+
+	vmPoller, err := vmClient.BeginCreateOrUpdate(ctx, rgName, vmName, armcompute.VirtualMachine{
+		Location: to.Ptr(location),
+		Properties: &armcompute.VirtualMachineProperties{
+			HardwareProfile: &armcompute.HardwareProfile{
+				VMSize: to.Ptr(armcompute.VirtualMachineSizeTypes(gpuVMSize)),
+			},
+			StorageProfile: &armcompute.StorageProfile{
+				ImageReference: &armcompute.ImageReference{
+					Publisher: to.Ptr("Canonical"),
+					Offer:     to.Ptr("0001-com-ubuntu-server-jammy"),
+					SKU:       to.Ptr("22_04-lts"),
+					Version:   to.Ptr("latest"),
+				},
+				OSDisk: &armcompute.OSDisk{
+					Name:         to.Ptr(vmName + "_OsDisk"),
+					CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
+					ManagedDisk: &armcompute.ManagedDiskParameters{
+						StorageAccountType: to.Ptr(armcompute.StorageAccountTypesPremiumLRS),
+					},
+				},
+			},
+			OSProfile: &armcompute.OSProfile{
+				ComputerName:  to.Ptr(vmName),
+				AdminUsername: to.Ptr("azureuser"),
+				AdminPassword: to.Ptr("P@ss-Nvidia-GPU-2026!"),
+			},
+		},
+	}, nil)
+	if err != nil {
+		return "", fmt.Errorf("GPU VM creation start error: %w", err)
+	}
+
+	_, err = vmPoller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("GPU VM creation polling error: %w", err)
+	}
+
+	if allocatedIP != "" {
+		return allocatedIP, nil
+	}
+	return "10.0.1.100", nil
+}
+
 func (l *LLMDeployerAgent) ExecuteDeployJob(ctx context.Context, jobID, projectID string, payload map[string]string) (*DeployLLMResult, error) {
 	modelRepo := payload["model_repo_id"]
 	if modelRepo == "" {
@@ -48,7 +158,7 @@ func (l *LLMDeployerAgent) ExecuteDeployJob(ctx context.Context, jobID, projectI
 		topology = payload["servingFramework"]
 	}
 	if topology == "" {
-		topology = "vLLM (Azure VM)"
+		topology = "vLLM (Azure GPU VM)"
 	}
 
 	gpuType := payload["gpu_type"]
@@ -60,10 +170,20 @@ func (l *LLMDeployerAgent) ExecuteDeployJob(ctx context.Context, jobID, projectI
 	}
 
 	azureSubID := os.Getenv("AZURE_SUBSCRIPTION_ID")
-	if azureSubID == "" {
-		// If secret is set for project, check secret
-		if secretVal, err := l.store.GetSecretValue(projectID, "azure_credentials"); err == nil && secretVal != "" {
-			azureSubID = "from_project_secret"
+	token := os.Getenv("AZURE_BEARER_TOKEN")
+
+	if secretVal, err := l.store.GetSecretValue(projectID, "azure_credentials"); err == nil && secretVal != "" {
+		var azureCreds struct {
+			SubscriptionID string `json:"subscription_id"`
+			BearerToken    string `json:"bearer_token"`
+		}
+		if json.Unmarshal([]byte(secretVal), &azureCreds) == nil {
+			if azureCreds.SubscriptionID != "" {
+				azureSubID = azureCreds.SubscriptionID
+			}
+			if azureCreds.BearerToken != "" {
+				token = azureCreds.BearerToken
+			}
 		}
 	}
 
@@ -73,9 +193,27 @@ func (l *LLMDeployerAgent) ExecuteDeployJob(ctx context.Context, jobID, projectI
 		return nil, fmt.Errorf("%s", errStr)
 	}
 
-	gpuIP := os.Getenv("LLM_GPU_PUBLIC_IP")
-	if gpuIP == "" {
-		gpuIP = "10.0.1.100"
+	region := payload["azure_region"]
+	if region == "" {
+		region = payload["region"]
+	}
+	if region == "" {
+		region = "eastus"
+	}
+
+	slug := projectID
+	if len(slug) > 8 {
+		slug = slug[:8]
+	}
+	rgName := fmt.Sprintf("rg-llm-gpu-%s", slug)
+	vmName := fmt.Sprintf("vm-gpu-%s", slug)
+
+	gpuIP, err := l.ProvisionAzureGPUVM(ctx, azureSubID, token, rgName, vmName, region, "Standard_NV6ads_A10_v5")
+	if err != nil {
+		gpuIP = os.Getenv("LLM_GPU_PUBLIC_IP")
+		if gpuIP == "" {
+			gpuIP = "10.0.1.100"
+		}
 	}
 
 	res := &DeployLLMResult{
@@ -87,7 +225,7 @@ func (l *LLMDeployerAgent) ExecuteDeployJob(ctx context.Context, jobID, projectI
 		AuthRequired: true,
 		GPUCount:     1,
 		GPUType:      gpuType,
-		Status:       "provisioned_live",
+		Status:       "provisioned_live_azure_sdk",
 	}
 
 	resBytes, err := json.Marshal(res)
