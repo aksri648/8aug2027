@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/joho/godotenv"
 	"github.com/saas-agent-platform/backend/internal/agents/appdeployer"
 	"github.com/saas-agent-platform/backend/internal/agents/appdeveloper"
 	"github.com/saas-agent-platform/backend/internal/agents/appmaintainer"
@@ -17,6 +18,8 @@ import (
 )
 
 func main() {
+	_ = godotenv.Load(".env")
+
 	redisAddr := os.Getenv("REDIS_ADDR")
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"

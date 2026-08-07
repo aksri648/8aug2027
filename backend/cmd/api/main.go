@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/saas-agent-platform/backend/internal/agents/shared"
 	"github.com/saas-agent-platform/backend/internal/api"
 	"github.com/saas-agent-platform/backend/internal/queue"
@@ -16,6 +17,8 @@ import (
 )
 
 func main() {
+	_ = godotenv.Load(".env")
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
