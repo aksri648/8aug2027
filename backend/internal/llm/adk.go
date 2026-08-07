@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
@@ -81,7 +82,7 @@ func (g *GoogleADKClient) ExecuteADKToolCalling(ctx context.Context, prompt stri
 
 	model := client.GenerativeModel(g.model)
 
-	// Declare official Google ADK Function Declarations
+	// Official Google ADK Function Declarations & Tools
 	model.Tools = []*genai.Tool{
 		{
 			FunctionDeclarations: []*genai.FunctionDeclaration{
@@ -125,7 +126,7 @@ func (g *GoogleADKClient) ExecuteADKToolCalling(ctx context.Context, prompt stri
 
 	for _, part := range resp.Candidates[0].Content.Parts {
 		if fnCall, ok := part.(genai.FunctionCall); ok {
-			log.Printf("⚡ Google ADK Native Function Call Triggered: %s", fnCall.Name)
+			log.Printf("⚡ Official Google ADK Function Call Triggered: %s", fnCall.Name)
 			return &fnCall, "", nil
 		}
 		if txt, ok := part.(genai.Text); ok {
@@ -134,18 +135,6 @@ func (g *GoogleADKClient) ExecuteADKToolCalling(ctx context.Context, prompt stri
 	}
 
 	return nil, "", nil
-}
-
-// Convert ADK tool arguments to JSON payload
-func ADKFunctionArgsToMap(fnCall *genai.FunctionCall) map[string]interface{} {
-	if fnCall == nil || fnCall.Args == nil {
-		return make(map[string]interface{})
-	}
-	res := make(map[string]interface{})
-	for k, v := range fnCall.Args {
-		res[k] = v
-	}
-	return res
 }
 
 func (g *GoogleADKClient) GenerateADKStructuredFiles(ctx context.Context, prompt, stack string) (map[string]string, error) {
@@ -162,7 +151,7 @@ func (g *GoogleADKClient) GenerateADKStructuredFiles(ctx context.Context, prompt
 	model := client.GenerativeModel(g.model)
 	model.ResponseMIMEType = "application/json"
 	model.ResponseSchema = &genai.Schema{
-		Type: genai.TypeObject,
+		Type:        genai.TypeObject,
 		Description: "Map of file path to file content",
 	}
 
@@ -185,8 +174,9 @@ func (g *GoogleADKClient) GenerateADKStructuredFiles(ctx context.Context, prompt
 		}
 	}
 
+	cleaned := strings.TrimSpace(jsonText)
 	var files map[string]string
-	if err := json.Unmarshal([]byte(jsonText), &files); err != nil {
+	if err := json.Unmarshal([]byte(cleaned), &files); err != nil {
 		return nil, fmt.Errorf("failed to parse Google ADK structured JSON response: %w", err)
 	}
 
