@@ -86,32 +86,10 @@ export default function ChatPanel({
             <Menu className="w-5 h-5" />
           </button>
 
-          {/* Model Selector Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
-              className="flex items-center space-x-1 text-sm font-medium text-gray-200 hover:text-white px-2.5 py-1.5 rounded-lg hover:bg-[#2c2c2c] transition-colors"
-            >
-              <span>{selectedModel}</span>
-              <ChevronDown className="w-4 h-4 text-gray-400" />
-            </button>
-
-            {modelDropdownOpen && (
-              <div className="absolute left-0 mt-1 w-56 bg-[#2a2a2a] border border-[#3a3a3a] rounded-xl shadow-2xl py-1 z-30">
-                {modelsList.map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => {
-                      setSelectedModel(m);
-                      setModelDropdownOpen(false);
-                    }}
-                    className="w-full text-left px-4 py-2 text-xs font-medium text-gray-200 hover:bg-[#383838] hover:text-white flex items-center justify-between"
-                  >
-                    <span>{m}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+          {/* Backend Model Badge */}
+          <div className="flex items-center space-x-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Backend Model (.env)</span>
           </div>
         </div>
 
@@ -264,14 +242,6 @@ export default function ChatPanel({
             </div>
 
             <div className="flex items-center space-x-3">
-              <button
-                onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
-                className="flex items-center space-x-1 text-xs text-gray-300 hover:text-white font-medium px-2.5 py-1 rounded-lg bg-[#383838] hover:bg-[#404040]"
-              >
-                <span>{selectedModel}</span>
-                <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-              </button>
-              
               <button
                 onClick={handleSend}
                 disabled={!prompt.trim()}
