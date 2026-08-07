@@ -50,58 +50,27 @@ func (m *AppMaintainerAgent) ExecuteMaintainJob(ctx context.Context, jobID, proj
 		}
 	}
 
-	// Use project sandbox to inspect and apply maintenance patch
-	sb := m.daytonaClient.GetOrCreateSandbox(projectID)
-
-	filesFixed := 0
-	diagnosis := fmt.Sprintf("Diagnosed issue from prompt: '%s'. Applied recovery validation and handling.", prompt)
-
-	// Invoke real LLM API if credentials/endpoint are configured
-	if m.llmClient.HasCredentials() {
-		log.Printf("🤖 Invoking LLM API for bug diagnosis & patch synthesis (Prompt: %s)...", prompt)
-		updatedFiles, llmDiagnosis, err := m.llmClient.GenerateBugFix(ctx, prompt, sb.Files)
-		if err == nil && len(updatedFiles) > 0 {
-			if llmDiagnosis != "" {
-				diagnosis = llmDiagnosis
-			}
-			for p, content := range updatedFiles {
-				sb.WriteFile(p, content)
-				filesFixed++
-			}
-		} else {
-			log.Printf("⚠️ LLM bug fix fallback (%v). Using structured patch generator.", err)
-		}
+	// Strict Production Check: Fail job if LLM credentials are missing
+	if !m.llmClient.HasCredentials() {
+		errStr := "App Maintainer Agent failed: No LLM API credentials configured. Set OPENAI_API_KEY, GEMINI_API_KEY, or CUSTOM_OPENAI_BASE_URL to diagnose bugs and synthesize code patches."
+		m.store.UpdateJob(jobID, "failed", nil, &errStr)
+		return nil, fmt.Errorf("%s", errStr)
 	}
 
-	// Fallback patch generator if LLM credentials not present
-	if filesFixed == 0 {
-		fixedCode := `package main
+	sb := m.daytonaClient.GetOrCreateSandbox(projectID)
 
-import (
-	"fmt"
-	"log"
-	"net/http"
-)
+	log.Printf("🤖 Invoking LLM API for bug diagnosis & patch synthesis (Prompt: %s)...", prompt)
+	updatedFiles, diagnosis, err := m.llmClient.GenerateBugFix(ctx, prompt, sb.Files)
+	if err != nil || len(updatedFiles) == 0 {
+		errStr := fmt.Sprintf("App Maintainer Agent failed during LLM bug diagnosis: %v", err)
+		m.store.UpdateJob(jobID, "failed", nil, &errStr)
+		return nil, fmt.Errorf("%s", errStr)
+	}
 
-func main() {
-	// FIX: Applied recovery middleware and nil check safety for checkout handler
-	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-	http.HandleFunc("/checkout", func(w http.ResponseWriter, r *http.Request) {
-		if r == nil {
-			http.Error(w, "invalid request context", http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(` + "`" + `{"status":"checkout_processed","success":true}` + "`" + `))
-	})
-	log.Println("Server running on :8080...")
-	log.Fatal(http.ListenAndServe(":8080", nil))
-}`
-		sb.WriteFile("/main.go", fixedCode)
-		filesFixed = 1
+	filesFixed := 0
+	for p, content := range updatedFiles {
+		sb.WriteFile(p, content)
+		filesFixed++
 	}
 
 	commitHash := fmt.Sprintf("%x", time.Now().UnixNano())[:8]
