@@ -984,7 +984,24 @@ func (s *Server) handleSandboxPreview(w http.ResponseWriter, r *http.Request) {
 
 	sb := s.daytonaClient.GetOrCreateSandbox(pID)
 	filesCount := sb.GetFilesCount()
-	noVNCURL := buildDaytonaNoVNCURL("", sb.ID, pID)
+
+	// 1. Start VNC processes in Daytona Sandbox (Xvfb, xfce4, x11vnc, novnc)
+	_ = s.daytonaClient.StartComputerUse("", "", sb.ID)
+
+	// 2. Fetch Daytona signed preview URL for port 6080 (valid 1 hour)
+	var noVNCURL string
+	if custom := os.Getenv("DAYTONA_NOVNC_URL"); custom != "" {
+		noVNCURL = custom
+	} else if os.Getenv("DAYTONA_SERVER_URL") != "" {
+		signedURL, err := s.daytonaClient.GetSignedPreviewURL("", "", sb.ID, 6080, 3600)
+		if err == nil && signedURL != "" {
+			noVNCURL = shared.FormatSignedNoVNCURL(signedURL)
+		} else {
+			noVNCURL = fmt.Sprintf("/api/v1/projects/%s/sandbox/novnc", pID)
+		}
+	} else {
+		noVNCURL = fmt.Sprintf("/api/v1/projects/%s/sandbox/novnc", pID)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"project_id":   pID,
@@ -1008,7 +1025,17 @@ func (s *Server) handleServeSandboxNoVNC(w http.ResponseWriter, r *http.Request)
 	}
 
 	sb := s.daytonaClient.GetOrCreateSandbox(pID)
-	targetVncURL := buildDaytonaNoVNCURL("", sb.ID, pID)
+	_ = s.daytonaClient.StartComputerUse("", "", sb.ID)
+
+	var targetVncURL string
+	if os.Getenv("DAYTONA_SERVER_URL") != "" {
+		if signed, err := s.daytonaClient.GetSignedPreviewURL("", "", sb.ID, 6080, 3600); err == nil && signed != "" {
+			targetVncURL = shared.FormatSignedNoVNCURL(signed)
+		}
+	}
+	if targetVncURL == "" {
+		targetVncURL = "http://localhost:6080/vnc.html?autoconnect=true&resize=remote"
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	html := fmt.Sprintf(`<!DOCTYPE html>

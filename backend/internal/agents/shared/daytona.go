@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -100,6 +101,130 @@ type DaytonaWorkspaceInfo struct {
 	Target    string `json:"target"`
 	Status    string `json:"status"`
 	PublicURL string `json:"public_url,omitempty"`
+}
+
+type DaytonaSignedPreviewResponse struct {
+	URL       string `json:"url"`
+	ExpiresAt string `json:"expires_at,omitempty"`
+	Token     string `json:"token,omitempty"`
+}
+
+func (c *DaytonaClient) StartComputerUse(serverURL, apiKey, workspaceID string) error {
+	if serverURL == "" {
+		serverURL = os.Getenv("DAYTONA_SERVER_URL")
+	}
+	if apiKey == "" {
+		apiKey = os.Getenv("DAYTONA_API_KEY")
+	}
+	if serverURL == "" {
+		return nil
+	}
+
+	endpoint := fmt.Sprintf("%s/workspace/%s/computer-use/start", strings.TrimRight(serverURL, "/"), workspaceID)
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer([]byte("{}")))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to start Daytona ComputerUse VNC: %w", err)
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+func (c *DaytonaClient) GetSignedPreviewURL(serverURL, apiKey, workspaceID string, port int, expiresSeconds int) (string, error) {
+	if serverURL == "" {
+		serverURL = os.Getenv("DAYTONA_SERVER_URL")
+	}
+	if apiKey == "" {
+		apiKey = os.Getenv("DAYTONA_API_KEY")
+	}
+	if serverURL == "" {
+		return "", fmt.Errorf("Daytona server URL not configured")
+	}
+
+	if expiresSeconds <= 0 {
+		expiresSeconds = 3600
+	}
+	if port <= 0 {
+		port = 6080
+	}
+
+	endpoint := fmt.Sprintf("%s/workspace/%s/signed-preview-url", strings.TrimRight(serverURL, "/"), workspaceID)
+	payload := map[string]interface{}{
+		"port":      port,
+		"expires":   expiresSeconds,
+		"expiresIn": expiresSeconds,
+	}
+	jsonBytes, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("Daytona signed preview request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var presp DaytonaSignedPreviewResponse
+		if err := json.NewDecoder(resp.Body).Decode(&presp); err == nil && presp.URL != "" {
+			return presp.URL, nil
+		}
+	}
+
+	// Try GET query string endpoint if POST returns 404/405
+	getEndpoint := fmt.Sprintf("%s/workspace/%s/signed-preview-url?port=%d&expires=%d", strings.TrimRight(serverURL, "/"), workspaceID, port, expiresSeconds)
+	req2, err := http.NewRequest("GET", getEndpoint, nil)
+	if err == nil {
+		if apiKey != "" {
+			req2.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+		resp2, err := c.client.Do(req2)
+		if err == nil {
+			defer resp2.Body.Close()
+			if resp2.StatusCode >= 200 && resp2.StatusCode < 300 {
+				var presp DaytonaSignedPreviewResponse
+				if err := json.NewDecoder(resp2.Body).Decode(&presp); err == nil && presp.URL != "" {
+					return presp.URL, nil
+				}
+			}
+		}
+	}
+
+	respBody, _ := io.ReadAll(resp.Body)
+	return "", fmt.Errorf("Daytona API returned HTTP %d: %s", resp.StatusCode, string(respBody))
+}
+
+func FormatSignedNoVNCURL(signedURL string) string {
+	if strings.Contains(signedURL, "vnc.html") {
+		if strings.Contains(signedURL, "?") {
+			return signedURL + "&autoconnect=true&resize=remote"
+		}
+		return signedURL + "?autoconnect=true&resize=remote"
+	}
+
+	if strings.Contains(signedURL, "?") {
+		parts := strings.SplitN(signedURL, "?", 2)
+		base := strings.TrimRight(parts[0], "/")
+		return fmt.Sprintf("%s/vnc.html?%s&autoconnect=true&resize=remote", base, parts[1])
+	}
+
+	base := strings.TrimRight(signedURL, "/")
+	return fmt.Sprintf("%s/vnc.html?autoconnect=true&resize=remote", base)
 }
 
 func (c *DaytonaClient) CreateRemoteWorkspace(serverURL, apiKey, projectID string) (*DaytonaWorkspaceInfo, error) {
