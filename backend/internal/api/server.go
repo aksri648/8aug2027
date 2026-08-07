@@ -948,6 +948,24 @@ func (s *Server) handleCreateTerminalSession(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+func buildDaytonaNoVNCURL(serverURL, workspaceID string) string {
+	if custom := os.Getenv("DAYTONA_NOVNC_URL"); custom != "" {
+		return custom
+	}
+	if serverURL == "" {
+		serverURL = os.Getenv("DAYTONA_SERVER_URL")
+	}
+	if serverURL == "" {
+		return fmt.Sprintf("https://app.daytona.io/workspace/%s/novnc/vnc.html?autoconnect=true", workspaceID)
+	}
+
+	trimmed := strings.TrimRight(serverURL, "/")
+	trimmed = strings.TrimSuffix(trimmed, "/api")
+	trimmed = strings.TrimRight(trimmed, "/")
+
+	return fmt.Sprintf("%s/workspace/%s/novnc/vnc.html?autoconnect=true", trimmed, workspaceID)
+}
+
 func (s *Server) handleSandboxPreview(w http.ResponseWriter, r *http.Request) {
 	pID := chi.URLParam(r, "projectId")
 	userID, _ := auth.GetUserIDFromContext(r.Context())
@@ -959,17 +977,7 @@ func (s *Server) handleSandboxPreview(w http.ResponseWriter, r *http.Request) {
 
 	sb := s.daytonaClient.GetOrCreateSandbox(pID)
 	filesCount := sb.GetFilesCount()
-
-	noVNCURL := os.Getenv("DAYTONA_NOVNC_URL")
-	if noVNCURL == "" {
-		serverURL := os.Getenv("DAYTONA_SERVER_URL")
-		if serverURL != "" {
-			trimmed := strings.TrimRight(serverURL, "/")
-			noVNCURL = fmt.Sprintf("%s/workspace/%s/novnc/vnc.html?autoconnect=true&resize=remote", trimmed, sb.ID)
-		} else {
-			noVNCURL = fmt.Sprintf("/api/v1/projects/%s/sandbox/novnc", pID)
-		}
-	}
+	noVNCURL := buildDaytonaNoVNCURL("", sb.ID)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"project_id":   pID,
@@ -993,17 +1001,7 @@ func (s *Server) handleServeSandboxNoVNC(w http.ResponseWriter, r *http.Request)
 	}
 
 	sb := s.daytonaClient.GetOrCreateSandbox(pID)
-
-	targetVncURL := os.Getenv("DAYTONA_NOVNC_URL")
-	if targetVncURL == "" {
-		serverURL := os.Getenv("DAYTONA_SERVER_URL")
-		if serverURL != "" {
-			trimmed := strings.TrimRight(serverURL, "/")
-			targetVncURL = fmt.Sprintf("%s/api/workspace/%s/novnc/vnc.html?autoconnect=true", trimmed, sb.ID)
-		} else {
-			targetVncURL = fmt.Sprintf("https://app.daytona.io/api/workspace/%s/novnc/vnc.html?autoconnect=true", sb.ID)
-		}
-	}
+	targetVncURL := buildDaytonaNoVNCURL("", sb.ID)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	html := fmt.Sprintf(`<!DOCTYPE html>
