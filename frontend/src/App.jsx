@@ -24,29 +24,63 @@ export default function App() {
   const [secretType, setSecretType] = useState('github_pat');
   const [systemStatusEvents, setSystemStatusEvents] = useState([]);
   const [streamingMessage, setStreamingMessage] = useState('');
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('auth_token') || '');
   const wsRef = useRef(null);
 
+  // Auto-login seeded user if no token exists for demo/dev
   useEffect(() => {
-    fetchProjects();
+    const initAuth = async () => {
+      let token = localStorage.getItem('auth_token');
+      if (!token) {
+        try {
+          const res = await fetch('/api/v1/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: 'developer@example.com', password: 'defaultpassword123' }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            token = data.token;
+            localStorage.setItem('auth_token', token);
+            setAuthToken(token);
+          }
+        } catch (e) {
+          console.error('Failed auto-login:', e);
+        }
+      }
+    };
+    initAuth().then(() => {
+      fetchProjects();
+    });
   }, []);
 
   useEffect(() => {
-    fetchProjectDetail(activeProjectID);
-    fetchMessages(activeProjectID);
-    fetchGitStatus(activeProjectID);
-    connectWebSocket(activeProjectID);
+    if (activeProjectID) {
+      fetchProjectDetail(activeProjectID);
+      fetchMessages(activeProjectID);
+      fetchGitStatus(activeProjectID);
+      connectWebSocket(activeProjectID);
+    }
 
     return () => {
       if (wsRef.current) wsRef.current.close();
     };
-  }, [activeProjectID]);
+  }, [activeProjectID, authToken]);
+
+  const getAuthHeaders = () => {
+    const token = authToken || localStorage.getItem('auth_token');
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+  };
 
   const fetchProjects = async () => {
     try {
-      const res = await fetch('/api/v1/projects');
+      const res = await fetch('/api/v1/projects', { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setProjects(data);
+        if (data.length > 0 && !data.some(p => p.id === activeProjectID)) {
+          setActiveProjectID(data[0].id);
+        }
       }
     } catch (e) {
       console.error('Failed to fetch projects:', e);
@@ -61,7 +95,7 @@ export default function App() {
     try {
       const res = await fetch('/api/v1/projects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ name: nameStr }),
       });
       if (res.ok) {
@@ -77,7 +111,10 @@ export default function App() {
 
   const handleDeleteProject = async (pID) => {
     try {
-      const res = await fetch(`/api/v1/projects/${pID}`, { method: 'DELETE' });
+      const res = await fetch(`/api/v1/projects/${pID}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
       if (res.ok) {
         const remaining = projects.filter((p) => p.id !== pID);
         setProjects(remaining);
@@ -96,7 +133,7 @@ export default function App() {
 
   const fetchProjectDetail = async (pID) => {
     try {
-      const res = await fetch(`/api/v1/projects/${pID}`);
+      const res = await fetch(`/api/v1/projects/${pID}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setActiveProject(data);
@@ -108,7 +145,7 @@ export default function App() {
 
   const fetchMessages = async (pID) => {
     try {
-      const res = await fetch(`/api/v1/projects/${pID}/messages`);
+      const res = await fetch(`/api/v1/projects/${pID}/messages`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setMessages(data);
@@ -120,7 +157,7 @@ export default function App() {
 
   const fetchGitStatus = async (pID) => {
     try {
-      const res = await fetch(`/api/v1/projects/${pID}/git/status`);
+      const res = await fetch(`/api/v1/projects/${pID}/git/status`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setUncommittedFiles(data.uncommitted || []);
@@ -135,9 +172,10 @@ export default function App() {
       wsRef.current.close();
     }
 
+    const token = authToken || localStorage.getItem('auth_token');
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/v1/projects/${pID}/stream`;
+    const wsUrl = `${protocol}//${host}/api/v1/projects/${pID}/stream?token=${encodeURIComponent(token)}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -155,7 +193,7 @@ export default function App() {
           setStreamingMessage('');
           fetchMessages(pID);
         } else if (event.type === 'job_update') {
-          if (event.status === 'succeeded') {
+          if (event.status === 'succeeded' || event.status === 'failed') {
             fetchGitStatus(pID);
             fetchMessages(pID);
           }
@@ -166,21 +204,18 @@ export default function App() {
     };
   };
 
-  const handleSendMessage = async (content) => {
-    // Append optimistic user message
+  const handleSendMessage = async (content, agentPayload = null) => {
     const optUserMsg = { id: 'temp-' + Date.now(), role: 'user', content };
     setMessages((prev) => [...prev, optUserMsg]);
 
     try {
       const res = await fetch(`/api/v1/projects/${activeProjectID}/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ content, agent_payload: agentPayload }),
       });
 
       if (res.ok) {
-        const data = await res.json();
-        // Re-fetch server state
         fetchMessages(activeProjectID);
       }
     } catch (e) {
@@ -192,7 +227,7 @@ export default function App() {
     try {
       const res = await fetch(`/api/v1/projects/${activeProjectID}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ git_remote_url: gitRemoteURL }),
       });
       if (res.ok) {
@@ -208,12 +243,11 @@ export default function App() {
     try {
       const res = await fetch(`/api/v1/projects/${activeProjectID}/git/push`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ commit_message: 'Update from SaaS Agentic Platform' }),
       });
 
       if (res.status === 428) {
-        // Precondition Required (PAT secret missing)
         setSecretType('github_pat');
         setSecretModalOpen(true);
       } else if (res.ok) {
@@ -298,8 +332,8 @@ export default function App() {
         isOpen={openModal === 'wizard'}
         onClose={() => setOpenModal(null)}
         activeProject={activeProject}
-        onExecuteAgentTask={(promptText) => {
-          handleSendMessage(promptText);
+        onExecuteAgentTask={(promptText, payload) => {
+          handleSendMessage(promptText, payload);
         }}
       />
 

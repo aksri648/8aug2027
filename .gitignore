@@ -17,6 +17,9 @@ frontend/.env
 *.dylib
 /tmp/
 
+# Databases
+*.db
+
 # OS metadata
 .DS_Store
 Thumbs.db

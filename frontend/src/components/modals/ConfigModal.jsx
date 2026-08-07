@@ -40,11 +40,21 @@ export default function ConfigModal({ isOpen, onClose }) {
     setConfig((prev) => ({ ...prev, [field]: val }));
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
-    Object.entries(config).forEach(([k, v]) => {
-      localStorage.setItem(`cfg_${k}`, v);
-    });
+    try {
+      const token = localStorage.getItem('auth_token');
+      await fetch('/api/v1/config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify(config),
+      });
+    } catch (e) {
+      console.error('Error saving config to server:', e);
+    }
     setSaved(true);
     setTimeout(() => {
       setSaved(false);
@@ -56,9 +66,13 @@ export default function ConfigModal({ isOpen, onClose }) {
     setTesting(true);
     setTestResult(null);
     try {
+      const token = localStorage.getItem('auth_token');
       const res = await fetch('/api/v1/providers/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({
           base_url: config.customOpenAIBaseURL,
           api_key: config.customOpenAIKey,
@@ -81,9 +95,13 @@ export default function ConfigModal({ isOpen, onClose }) {
   const handleDiscoverModels = async () => {
     setDiscovering(true);
     try {
+      const token = localStorage.getItem('auth_token');
       const res = await fetch('/api/v1/providers/discover', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({
           base_url: config.customOpenAIBaseURL,
           api_key: config.customOpenAIKey,

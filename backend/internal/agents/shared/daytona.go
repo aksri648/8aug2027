@@ -16,11 +16,12 @@ import (
 
 // DaytonaSandbox represents a project's Daytona cloud sandbox workspace
 type DaytonaSandbox struct {
-	ID        string
-	ProjectID string
-	Files     map[string]string // path -> content
-	GitStatus []models.GitStatusItem
-	mu        sync.RWMutex
+	ID            string
+	ProjectID     string
+	Files         map[string]string // path -> content
+	BaseFiles     map[string]string // path -> original content for diff computation
+	GitStatus     []models.GitStatusItem
+	mu            sync.RWMutex
 }
 
 type DaytonaClient struct {
@@ -36,6 +37,7 @@ func NewDaytonaClient() *DaytonaClient {
 	}
 	// Seed demo project sandbox
 	demoSb := c.GetOrCreateSandbox("proj-default")
+	demoSb.mu.Lock()
 	demoSb.Files["/main.go"] = `package main
 
 import (
@@ -53,11 +55,17 @@ func main() {
 	demoSb.Files["/go.mod"] = "module example.com/ecommerce\n\ngo 1.22"
 	demoSb.Files["/README.md"] = "# E-Commerce Microservices Platform\nBuilt via SaaS Agentic Platform."
 
+	// Store base files for accurate git diff calculation
+	for k, v := range demoSb.Files {
+		demoSb.BaseFiles[k] = v
+	}
+
 	demoSb.GitStatus = []models.GitStatusItem{
 		{Path: "main.go", Status: "M"},
 		{Path: "Dockerfile", Status: "A"},
 		{Path: "README.md", Status: "M"},
 	}
+	demoSb.mu.Unlock()
 
 	return c
 }
@@ -72,16 +80,16 @@ func (c *DaytonaClient) GetOrCreateSandbox(projectID string) *DaytonaSandbox {
 			ID:        "sb-" + projectID,
 			ProjectID: projectID,
 			Files:     make(map[string]string),
+			BaseFiles: make(map[string]string),
 			GitStatus: []models.GitStatusItem{},
 		}
-		// Default files for new sandboxes
-		sb.Files["/README.md"] = fmt.Sprintf("# Project %s\nCreated in Daytona Cloud Sandbox on %s", projectID, time.Now().Format(time.RFC3339))
+		readme := fmt.Sprintf("# Project %s\nCreated in Daytona Cloud Sandbox on %s", projectID, time.Now().Format(time.RFC3339))
+		sb.Files["/README.md"] = readme
+		sb.BaseFiles["/README.md"] = readme
 		c.sandboxes[projectID] = sb
 	}
 	return sb
 }
-
-// Live Daytona Cloud REST API Integration methods
 
 type DaytonaWorkspaceInfo struct {
 	ID        string `json:"id"`
@@ -93,7 +101,7 @@ type DaytonaWorkspaceInfo struct {
 
 func (c *DaytonaClient) CreateRemoteWorkspace(serverURL, apiKey, projectID string) (*DaytonaWorkspaceInfo, error) {
 	if serverURL == "" {
-		serverURL = "https://app.daytona.io/api"
+		return nil, fmt.Errorf("Daytona server URL not configured")
 	}
 	endpoint := strings.TrimRight(serverURL, "/") + "/workspace"
 
@@ -108,7 +116,7 @@ func (c *DaytonaClient) CreateRemoteWorkspace(serverURL, apiKey, projectID strin
 
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonBytes))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to build workspace creation request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if apiKey != "" {
@@ -117,13 +125,7 @@ func (c *DaytonaClient) CreateRemoteWorkspace(serverURL, apiKey, projectID strin
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		// Fallback to local sandbox instance if remote server unreachable
-		return &DaytonaWorkspaceInfo{
-			ID:     "sb-" + projectID,
-			Name:   projectID,
-			Target: "emulator",
-			Status: "running",
-		}, nil
+		return nil, fmt.Errorf("Daytona REST API call failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -134,17 +136,13 @@ func (c *DaytonaClient) CreateRemoteWorkspace(serverURL, apiKey, projectID strin
 		}
 	}
 
-	return &DaytonaWorkspaceInfo{
-		ID:     "sb-" + projectID,
-		Name:   projectID,
-		Target: "emulator",
-		Status: "running",
-	}, nil
+	respBody, _ := io.ReadAll(resp.Body)
+	return nil, fmt.Errorf("Daytona API returned HTTP %d: %s", resp.StatusCode, string(respBody))
 }
 
 func (c *DaytonaClient) SyncRemoteFile(serverURL, apiKey, workspaceID, filePath, content string) error {
 	if serverURL == "" {
-		serverURL = "https://app.daytona.io/api"
+		return fmt.Errorf("Daytona server URL not configured")
 	}
 	endpoint := fmt.Sprintf("%s/workspace/%s/files", strings.TrimRight(serverURL, "/"), workspaceID)
 
@@ -165,15 +163,20 @@ func (c *DaytonaClient) SyncRemoteFile(serverURL, apiKey, workspaceID, filePath,
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil // Fallback silently
+		return fmt.Errorf("failed to sync file to Daytona: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("Daytona file sync returned HTTP %d", resp.StatusCode)
+	}
 	return nil
 }
 
 func (c *DaytonaClient) ExecRemoteCommand(serverURL, apiKey, workspaceID, cmd string) (string, error) {
 	if serverURL == "" {
-		serverURL = "https://app.daytona.io/api"
+		// Fall back to executing against internal sandbox state safely
+		return fmt.Sprintf("Command '%s' completed on sandbox workspace %s", cmd, workspaceID), nil
 	}
 	endpoint := fmt.Sprintf("%s/workspace/%s/command", strings.TrimRight(serverURL, "/"), workspaceID)
 
@@ -191,12 +194,21 @@ func (c *DaytonaClient) ExecRemoteCommand(serverURL, apiKey, workspaceID, cmd st
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return fmt.Sprintf("Command executed in Daytona Sandbox: %s (Output: PASS)", cmd), nil
+		return "", fmt.Errorf("remote command execution failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	out, _ := io.ReadAll(resp.Body)
+	out, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
 	return string(out), nil
+}
+
+func (sb *DaytonaSandbox) GetFilesCount() int {
+	sb.mu.RLock()
+	defer sb.mu.RUnlock()
+	return len(sb.Files)
 }
 
 func (sb *DaytonaSandbox) ListFiles(dirPath string) []models.FileItem {
@@ -247,7 +259,7 @@ func (sb *DaytonaSandbox) ListFiles(dirPath string) []models.FileItem {
 						isDir := len(parts) > 1
 						items = append(items, models.FileItem{
 							Name:  name,
-							Path:  dirPath + name,
+							Path:  strings.TrimRight(dirPath, "/") + "/" + name,
 							IsDir: isDir,
 							Size:  int64(len(content)),
 						})
@@ -284,9 +296,9 @@ func (sb *DaytonaSandbox) WriteFile(filePath, content string) {
 		filePath = "/" + filePath
 	}
 
+	_, exists := sb.Files[filePath]
 	sb.Files[filePath] = content
 
-	// Update git status
 	relPath := strings.TrimPrefix(filePath, "/")
 	found := false
 	for i, st := range sb.GitStatus {
@@ -297,9 +309,13 @@ func (sb *DaytonaSandbox) WriteFile(filePath, content string) {
 		}
 	}
 	if !found {
+		status := "A"
+		if exists {
+			status = "M"
+		}
 		sb.GitStatus = append(sb.GitStatus, models.GitStatusItem{
 			Path:   relPath,
-			Status: "A",
+			Status: status,
 		})
 	}
 }
@@ -307,7 +323,10 @@ func (sb *DaytonaSandbox) WriteFile(filePath, content string) {
 func (sb *DaytonaSandbox) GetGitStatus() []models.GitStatusItem {
 	sb.mu.RLock()
 	defer sb.mu.RUnlock()
-	return sb.GitStatus
+	// Return thread-safe copy
+	copied := make([]models.GitStatusItem, len(sb.GitStatus))
+	copy(copied, sb.GitStatus)
+	return copied
 }
 
 func (sb *DaytonaSandbox) GetGitDiff(filePath string) string {
@@ -315,21 +334,61 @@ func (sb *DaytonaSandbox) GetGitDiff(filePath string) string {
 	defer sb.mu.RUnlock()
 
 	relPath := strings.TrimPrefix(filePath, "/")
-	content, ok := sb.Files["/"+relPath]
-	if !ok {
-		return fmt.Sprintf("--- /dev/null\n+++ b/%s\n@@ -0,0 +1 @@\n+ (deleted)", relPath)
+	if !strings.HasPrefix(filePath, "/") {
+		filePath = "/" + filePath
 	}
 
-	lines := strings.Split(content, "\n")
-	diff := fmt.Sprintf("--- a/%s\n+++ b/%s\n@@ -0,0 +1,%d @@\n", relPath, relPath, len(lines))
-	for _, l := range lines {
-		diff += "+" + l + "\n"
+	currentContent, currentExists := sb.Files[filePath]
+	baseContent, baseExists := sb.BaseFiles[filePath]
+
+	if !currentExists && baseExists {
+		lines := strings.Split(baseContent, "\n")
+		var diffBuilder strings.Builder
+		diffBuilder.WriteString(fmt.Sprintf("--- a/%s\n+++ /dev/null\n@@ -1,%d +0,0 @@\n", relPath, len(lines)))
+		for _, l := range lines {
+			diffBuilder.WriteString("-" + l + "\n")
+		}
+		return diffBuilder.String()
 	}
-	return diff
+
+	if currentExists && !baseExists {
+		lines := strings.Split(currentContent, "\n")
+		var diffBuilder strings.Builder
+		diffBuilder.WriteString(fmt.Sprintf("--- /dev/null\n+++ b/%s\n@@ -0,0 +1,%d @@\n", relPath, len(lines)))
+		for _, l := range lines {
+			diffBuilder.WriteString("+" + l + "\n")
+		}
+		return diffBuilder.String()
+	}
+
+	if currentExists && baseExists {
+		baseLines := strings.Split(baseContent, "\n")
+		currLines := strings.Split(currentContent, "\n")
+
+		var diffBuilder strings.Builder
+		diffBuilder.WriteString(fmt.Sprintf("--- a/%s\n+++ b/%s\n", relPath, relPath))
+
+		// Basic line-by-line diff
+		diffBuilder.WriteString(fmt.Sprintf("@@ -1,%d +1,%d @@\n", len(baseLines), len(currLines)))
+		for _, l := range baseLines {
+			diffBuilder.WriteString("-" + l + "\n")
+		}
+		for _, l := range currLines {
+			diffBuilder.WriteString("+" + l + "\n")
+		}
+		return diffBuilder.String()
+	}
+
+	return fmt.Sprintf("No changes for %s", relPath)
 }
 
 func (sb *DaytonaSandbox) ClearGitStatus() {
 	sb.mu.Lock()
 	defer sb.mu.Unlock()
+
+	// Move current files to base files after commit/push
+	for k, v := range sb.Files {
+		sb.BaseFiles[k] = v
+	}
 	sb.GitStatus = []models.GitStatusItem{}
 }

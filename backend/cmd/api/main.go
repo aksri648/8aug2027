@@ -11,6 +11,7 @@ import (
 
 	"github.com/saas-agent-platform/backend/internal/agents/shared"
 	"github.com/saas-agent-platform/backend/internal/api"
+	"github.com/saas-agent-platform/backend/internal/queue"
 	"github.com/saas-agent-platform/backend/internal/store"
 )
 
@@ -20,9 +21,16 @@ func main() {
 		port = "8080"
 	}
 
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+
 	appStore := store.NewStore()
 	daytonaClient := shared.NewDaytonaClient()
-	server := api.NewServer(appStore, daytonaClient)
+	jobQueue := queue.NewRedisQueue(redisAddr)
+
+	server := api.NewServer(appStore, daytonaClient, jobQueue)
 
 	httpServer := &http.Server{
 		Addr:         ":" + port,

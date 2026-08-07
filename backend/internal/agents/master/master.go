@@ -32,7 +32,6 @@ func NewMasterAgent(s *store.Store, dc *shared.DaytonaClient) *MasterAgent {
 	}
 }
 
-// Tool definitions for LLM function calling
 type ToolCall struct {
 	ID        string          `json:"id"`
 	Name      string          `json:"name"` // read_file, write_file, run_command, git_commit
@@ -93,19 +92,18 @@ func (m *MasterAgent) ExecuteTool(projectID string, tc ToolCall) (*ToolResult, e
 	}
 }
 
-// ClassifyIntent analyzes the user prompt and conversation history
 func (m *MasterAgent) ClassifyIntent(prompt string) Intent {
 	lower := strings.ToLower(prompt)
-	if strings.Contains(lower, "build") || strings.Contains(lower, "create") || strings.Contains(lower, "write app") || strings.Contains(lower, "generate") || strings.Contains(lower, "make a") || strings.Contains(lower, "develop") {
+	if strings.Contains(lower, "build") || strings.Contains(lower, "create") || strings.Contains(lower, "write app") || strings.Contains(lower, "generate") || strings.Contains(lower, "make a") || strings.Contains(lower, "develop") || strings.Contains(lower, "[app developer agent]") {
 		return IntentBuildApp
 	}
-	if strings.Contains(lower, "deploy app") || strings.Contains(lower, "deploy microservice") || strings.Contains(lower, "azure vm") || strings.Contains(lower, "docker deploy") || strings.Contains(lower, "containerize") {
+	if strings.Contains(lower, "deploy app") || strings.Contains(lower, "deploy microservice") || strings.Contains(lower, "azure vm") || strings.Contains(lower, "docker deploy") || strings.Contains(lower, "containerize") || strings.Contains(lower, "[app deployer agent]") {
 		return IntentDeployApp
 	}
-	if strings.Contains(lower, "deploy llm") || strings.Contains(lower, "hugging face") || strings.Contains(lower, "vllm") || strings.Contains(lower, "nvidia nim") || strings.Contains(lower, "self-host llm") || strings.Contains(lower, "llama") || strings.Contains(lower, "mistral") {
+	if strings.Contains(lower, "deploy llm") || strings.Contains(lower, "hugging face") || strings.Contains(lower, "vllm") || strings.Contains(lower, "nvidia nim") || strings.Contains(lower, "self-host llm") || strings.Contains(lower, "llama") || strings.Contains(lower, "mistral") || strings.Contains(lower, "[llm deployer agent]") {
 		return IntentDeployLLM
 	}
-	if strings.Contains(lower, "bug") || strings.Contains(lower, "fix") || strings.Contains(lower, "maintain") || strings.Contains(lower, "error") || strings.Contains(lower, "500") || strings.Contains(lower, "github repo") || strings.Contains(lower, "refactor") {
+	if strings.Contains(lower, "bug") || strings.Contains(lower, "fix") || strings.Contains(lower, "maintain") || strings.Contains(lower, "error") || strings.Contains(lower, "500") || strings.Contains(lower, "github repo") || strings.Contains(lower, "refactor") || strings.Contains(lower, "[app maintainer agent]") {
 		return IntentMaintainApp
 	}
 	return IntentGeneralOther
@@ -119,18 +117,34 @@ type TurnResult struct {
 	JobPayload        []byte
 }
 
-func (m *MasterAgent) ProcessTurn(ctx context.Context, projectID string, prompt string) (*TurnResult, error) {
+func (m *MasterAgent) ProcessTurn(ctx context.Context, projectID string, prompt string, extraPayload map[string]interface{}) (*TurnResult, error) {
 	intent := m.ClassifyIntent(prompt)
+
+	payloadMap := map[string]string{
+		"prompt":     prompt,
+		"project_id": projectID,
+	}
+	for k, v := range extraPayload {
+		payloadMap[k] = fmt.Sprintf("%v", v)
+	}
+
+	payload, err := json.Marshal(payloadMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal job payload: %w", err)
+	}
 
 	switch intent {
 	case IntentBuildApp:
-		payload, _ := json.Marshal(map[string]string{"prompt": prompt, "project_id": projectID})
 		job, err := m.store.CreateJob(projectID, "codegen", payload)
 		if err != nil {
 			return nil, err
 		}
+		stackMsg := ""
+		if s, ok := payloadMap["stack"]; ok && s != "" {
+			stackMsg = fmt.Sprintf(" using stack **%s**", s)
+		}
 		return &TurnResult{
-			AssistantResponse: "I've activated the **App Developer Agent** to build out your application. What tech stack (e.g. Go + React, Python FastAPI, Next.js) and primary features would you like me to include?",
+			AssistantResponse: fmt.Sprintf("I've activated the **App Developer Agent** to build out your application%s based on your prompt requirements.", stackMsg),
 			ActivatedAgent:    "App Developer Agent",
 			JobID:             job.ID,
 			JobType:           "codegen",
@@ -138,13 +152,26 @@ func (m *MasterAgent) ProcessTurn(ctx context.Context, projectID string, prompt 
 		}, nil
 
 	case IntentDeployApp:
-		payload, _ := json.Marshal(map[string]string{"prompt": prompt, "project_id": projectID})
 		job, err := m.store.CreateJob(projectID, "deploy_app", payload)
 		if err != nil {
 			return nil, err
 		}
+		vmSize := payloadMap["vm_size"]
+		if vmSize == "" {
+			vmSize = payloadMap["vmSize"]
+		}
+		region := payloadMap["azure_region"]
+		if region == "" {
+			region = payloadMap["azureRegion"]
+		}
+
+		infoStr := ""
+		if vmSize != "" || region != "" {
+			infoStr = fmt.Sprintf(" (Target: VM Size %s, Region %s)", vmSize, region)
+		}
+
 		return &TurnResult{
-			AssistantResponse: "Activated **App Deployer Agent**. I will inspect the sandbox codebase, generate container definitions, and provision Azure compute. Please ensure your Azure Credentials secret is set if not already present.",
+			AssistantResponse: fmt.Sprintf("Activated **App Deployer Agent**%s. Inspecting sandbox codebase, building container definition, and provisioning Azure infrastructure.", infoStr),
 			ActivatedAgent:    "App Deployer Agent",
 			JobID:             job.ID,
 			JobType:           "deploy_app",
@@ -152,13 +179,16 @@ func (m *MasterAgent) ProcessTurn(ctx context.Context, projectID string, prompt 
 		}, nil
 
 	case IntentDeployLLM:
-		payload, _ := json.Marshal(map[string]string{"prompt": prompt, "project_id": projectID})
 		job, err := m.store.CreateJob(projectID, "deploy_llm", payload)
 		if err != nil {
 			return nil, err
 		}
+		modelRepo := payloadMap["model_repo_id"]
+		if modelRepo == "" {
+			modelRepo = payloadMap["modelRepo"]
+		}
 		return &TurnResult{
-			AssistantResponse: "Activated **LLM Deployer Agent**.\n\nPlease clarify your preferred deployment options:\n1. **Hugging Face Model Repo ID** (e.g. `meta-llama/Llama-3-8B-Instruct` or `mistralai/Mistral-7B-v0.1`)\n2. **Topology**: (a) Azure VM + vLLM, (b) AKS + Load Balancer, or (c) Azure VM + NVIDIA NIM\n3. **Load Tier**: Light, Moderate, or Heavy.",
+			AssistantResponse: fmt.Sprintf("Activated **LLM Deployer Agent** for model `%s`. Provisioning dedicated GPU infrastructure and vLLM / NIM serving endpoint.", modelRepo),
 			ActivatedAgent:    "LLM Deployer Agent",
 			JobID:             job.ID,
 			JobType:           "deploy_llm",
@@ -166,13 +196,12 @@ func (m *MasterAgent) ProcessTurn(ctx context.Context, projectID string, prompt 
 		}, nil
 
 	case IntentMaintainApp:
-		payload, _ := json.Marshal(map[string]string{"prompt": prompt, "project_id": projectID})
 		job, err := m.store.CreateJob(projectID, "maintain_app", payload)
 		if err != nil {
 			return nil, err
 		}
 		return &TurnResult{
-			AssistantResponse: "Activated **App Maintainer Agent**. I will clone your repository into a fresh Daytona sandbox, reproduce the reported behavior, apply a fix, verify the build, and push a commit.",
+			AssistantResponse: "Activated **App Maintainer Agent**. Inspecting repository in Daytona sandbox, diagnosing issue, applying fix, and running verification tests.",
 			ActivatedAgent:    "App Maintainer Agent",
 			JobID:             job.ID,
 			JobType:           "maintain_app",

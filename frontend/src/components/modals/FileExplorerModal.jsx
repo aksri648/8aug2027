@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { X, FileText, Folder, RefreshCw, ChevronRight, ChevronDown, Code } from 'lucide-react';
+import { X, FileText, Folder, RefreshCw, Code, ArrowLeft } from 'lucide-react';
 
 export default function FileExplorerModal({ isOpen, onClose, activeProjectID }) {
   const [files, setFiles] = useState([]);
+  const [currentPath, setCurrentPath] = useState('/');
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileContent, setFileContent] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
+      setCurrentPath('/');
       fetchFiles('/');
     }
   }, [isOpen, activeProjectID]);
@@ -16,10 +18,16 @@ export default function FileExplorerModal({ isOpen, onClose, activeProjectID }) 
   const fetchFiles = async (dirPath) => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/v1/projects/${activeProjectID}/files?path=${encodeURIComponent(dirPath)}`);
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/v1/projects/${activeProjectID}/files?path=${encodeURIComponent(dirPath)}`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         setFiles(data);
+        setCurrentPath(dirPath);
       }
     } catch (e) {
       console.error('Error listing files:', e);
@@ -28,11 +36,20 @@ export default function FileExplorerModal({ isOpen, onClose, activeProjectID }) 
     }
   };
 
-  const handleSelectFile = async (item) => {
-    if (item.is_dir) return;
+  const handleSelectItem = async (item) => {
+    if (item.is_dir) {
+      fetchFiles(item.path);
+      return;
+    }
+
     setSelectedFile(item.path);
     try {
-      const res = await fetch(`/api/v1/projects/${activeProjectID}/files/content?path=${encodeURIComponent(item.path)}`);
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/v1/projects/${activeProjectID}/files/content?path=${encodeURIComponent(item.path)}`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         setFileContent(data.content);
@@ -40,6 +57,14 @@ export default function FileExplorerModal({ isOpen, onClose, activeProjectID }) 
     } catch (e) {
       console.error('Error fetching file content:', e);
     }
+  };
+
+  const handleNavigateUp = () => {
+    if (currentPath === '/' || currentPath === '') return;
+    const parts = currentPath.split('/').filter(Boolean);
+    parts.pop();
+    const parentPath = parts.length === 0 ? '/' : '/' + parts.join('/');
+    fetchFiles(parentPath);
   };
 
   if (!isOpen) return null;
@@ -52,10 +77,13 @@ export default function FileExplorerModal({ isOpen, onClose, activeProjectID }) 
           <div className="flex items-center space-x-2 text-[#d97757]">
             <Folder className="w-5 h-5" />
             <h2 className="text-lg font-semibold text-white">Sandbox File Explorer</h2>
+            <span className="text-xs text-gray-400 font-mono bg-[#252525] px-2 py-0.5 rounded">
+              {currentPath}
+            </span>
           </div>
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => fetchFiles('/')}
+              onClick={() => fetchFiles(currentPath)}
               className="p-1.5 text-gray-400 hover:text-white rounded-md hover:bg-[#333333] transition-colors"
               title="Refresh File Tree"
             >
@@ -71,12 +99,24 @@ export default function FileExplorerModal({ isOpen, onClose, activeProjectID }) 
         <div className="flex-1 flex overflow-hidden">
           {/* Left Tree Pane */}
           <div className="w-1/3 border-r border-[#333333] bg-[#1a1a1a] p-4 overflow-y-auto">
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Workspace Files</div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Workspace Files</div>
+              {currentPath !== '/' && (
+                <button
+                  onClick={handleNavigateUp}
+                  className="flex items-center space-x-1 text-xs text-[#d97757] hover:underline"
+                >
+                  <ArrowLeft className="w-3 h-3" />
+                  <span>Up</span>
+                </button>
+              )}
+            </div>
+
             <div className="space-y-1">
               {files.map((item) => (
                 <div
                   key={item.path}
-                  onClick={() => handleSelectFile(item)}
+                  onClick={() => handleSelectItem(item)}
                   className={`flex items-center space-x-2 px-3 py-2 rounded-lg cursor-pointer text-sm transition-colors ${
                     selectedFile === item.path
                       ? 'bg-[#2a221f] text-[#d97757] font-medium border border-[#d97757]/30'
@@ -91,6 +131,9 @@ export default function FileExplorerModal({ isOpen, onClose, activeProjectID }) 
                   <span className="truncate">{item.name}</span>
                 </div>
               ))}
+              {files.length === 0 && (
+                <div className="text-xs text-gray-500 py-4 text-center">Empty directory</div>
+              )}
             </div>
           </div>
 
@@ -112,7 +155,7 @@ export default function FileExplorerModal({ isOpen, onClose, activeProjectID }) 
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
                 <FileText className="w-12 h-12 mb-2 stroke-[1.5]" />
-                <p className="text-sm">Select a file from the tree to preview contents.</p>
+                <p className="text-sm">Select a file from the tree to preview contents or click a directory to expand.</p>
               </div>
             )}
           </div>

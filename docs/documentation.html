@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SaaS Agentic Development Platform - System Design & Architecture</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #090d16;
+            --bg-secondary: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.7);
+            --bg-card-hover: rgba(30, 41, 59, 0.9);
+            --accent-orange: #d97757;
+            --accent-orange-glow: rgba(217, 119, 87, 0.3);
+            --accent-blue: #38bdf8;
+            --accent-emerald: #34d399;
+            --accent-indigo: #818cf8;
+            --accent-purple: #a855f7;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: rgba(51, 65, 85, 0.6);
+            --border-highlight: rgba(217, 119, 87, 0.5);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            line-height: 1.6;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 15% 15%, rgba(217, 119, 87, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 85% 65%, rgba(56, 189, 248, 0.08) 0%, transparent 40%);
+        }
+
+        /* Sticky Glass Navigation */
+        nav.navbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0.85rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 800;
+            font-size: 1.2rem;
+            color: var(--text-main);
+            text-decoration: none;
+        }
+
+        .nav-logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent-orange), #c66849);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 12px var(--accent-orange-glow);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            padding: 6px 12px;
+            border-radius: 6px;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Container & Layout */
+        .container {
+            max-width: 1350px;
+            margin: 0 auto;
+            padding: 2.5rem 1.5rem;
+        }
+
+        /* Hero Header */
+        .hero-section {
+            text-align: center;
+            padding: 3rem 1rem 4rem 1rem;
+            position: relative;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(217, 119, 87, 0.15);
+            border: 1px solid var(--border-highlight);
+            color: var(--accent-orange);
+            padding: 6px 16px;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 1.5rem;
+        }
+
+        .hero-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3rem;
+            font-weight: 800;
+            line-height: 1.15;
+            background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 50%, var(--accent-orange) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1.25rem;
+        }
+
+        .hero-subtitle {
+            font-size: 1.15rem;
+            color: var(--text-muted);
+            max-width: 850px;
+            margin: 0 auto 2.5rem auto;
+            font-weight: 400;
+        }
+
+        .tech-tags {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .tag {
+            background: #1e293b;
+            border: 1px solid var(--border-color);
+            color: #cbd5e1;
+            padding: 5px 14px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            font-family: 'Fira Code', monospace;
+        }
+
+        /* Section Block */
+        .section-block {
+            margin-bottom: 4rem;
+            scroll-margin-top: 90px;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.75rem;
+        }
+
+        .section-icon {
+            font-size: 1.5rem;
+        }
+
+        .section-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        /* Cards & Glass Containers */
+        .glass-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 1.75rem;
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+            transition: border-color 0.3s ease;
+        }
+
+        .glass-card:hover {
+            border-color: rgba(148, 163, 184, 0.4);
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        /* Mermaid Wrapper */
+        .mermaid-wrapper {
+            background: #0b1120;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            overflow-x: auto;
+            display: flex;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+
+        .mermaid {
+            width: 100%;
+        }
+
+        /* Tables */
+        .spec-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .spec-table th, .spec-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .spec-table th {
+            background: #1e293b;
+            color: var(--accent-orange);
+            font-weight: 600;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .spec-table tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .code-inline {
+            font-family: 'Fira Code', monospace;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--accent-emerald);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.825rem;
+        }
+
+        /* Audit Grid Cards */
+        .audit-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .audit-card {
+            background: #0f172a;
+            border: 1px solid var(--border-color);
+            border-left: 4px solid var(--accent-orange);
+            border-radius: 12px;
+            padding: 1.25rem 1.5rem;
+        }
+
+        .audit-card.resolved {
+            border-left-color: var(--accent-emerald);
+        }
+
+        .audit-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .audit-title {
+            font-weight: 700;
+            font-size: 1rem;
+            color: var(--text-main);
+        }
+
+        .audit-badge {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            text-transform: uppercase;
+        }
+
+        .audit-badge.resolved {
+            background: rgba(52, 211, 153, 0.2);
+            color: var(--accent-emerald);
+        }
+
+        .audit-desc {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 0.75rem;
+        }
+
+        .audit-fix {
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            background: rgba(30, 41, 59, 0.8);
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 3rem 1rem;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Sticky Navigation -->
+    <nav class="navbar">
+        <a href="#" class="nav-logo">
+            <div class="nav-logo-icon">⚡</div>
+            <span>SaaS Agentic Platform Docs</span>
+        </a>
+        <ul class="nav-links">
+            <li><a href="#system-design">System Design</a></li>
+            <li><a href="#workflow">Agent Workflows</a></li>
+            <li><a href="#async-queue">Async Queue</a></li>
+            <li><a href="#tech-stack">Tech Stack</a></li>
+            <li><a href="#api-specs">API & WS Specs</a></li>
+            <li><a href="#audit-report">Audit & Bug Report</a></li>
+        </ul>
+    </nav>
+
+    <!-- Main Content Container -->
+    <div class="container">
+
+        <!-- Hero Section -->
+        <header class="hero-section">
+            <div class="hero-badge">Architecture & System Specification</div>
+            <h1 class="hero-title">SaaS Agentic Development Platform</h1>
+            <p class="hero-subtitle">
+                An end-to-end multi-agent software engineering system leveraging Go microservices, React 19, Daytona Cloud Sandboxes, Redis Task Queues, and Azure Infrastructure Provisioning.
+            </p>
+            <div class="tech-tags">
+                <span class="tag">Go 1.22 (REST + WS)</span>
+                <span class="tag">React 19 + Vite</span>
+                <span class="tag">Daytona Sandboxes</span>
+                <span class="tag">Redis (LPUSH/BRPOP + PubSub)</span>
+                <span class="tag">GORM (Postgres/SQLite)</span>
+                <span class="tag">Azure ARM REST SDK</span>
+                <span class="tag">vLLM & NVIDIA NIM</span>
+            </div>
+        </header>
+
+        <!-- 1. System Design Section -->
+        <section id="system-design" class="section-block">
+            <div class="section-header">
+                <span class="section-icon">🏗️</span>
+                <h2 class="section-title">1. System Architecture & Design</h2>
+            </div>
+            
+            <div class="glass-card">
+                <div class="card-title">
+                    <span>High-Level Distributed System Architecture</span>
+                    <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">Mermaid.js Diagram</span>
+                </div>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+                    The platform consists of a decoupled Client Tier (React SPA), API Gateway (Go Chi Router), Core Service Layer (Master Agent, Store, Daytona Client, WebSockets), Worker Pool (Redis Queue), and Infrastructure Providers (Daytona Cloud Sandboxes & Azure Compute).
+                </p>
+                <div class="mermaid-wrapper">
+                    <div class="mermaid">
+                    graph TB
+                        subgraph Client_Tier["Client Tier (React 19 Frontend)"]
+                            UI["React 19 SPA & Components"]
+                            CP["Chat Panel & Composer"]
+                            SB["Sidebar & Live Badges"]
+                            MOD["Modals: Task Wizard, Config, File Explorer, Terminal"]
+                            TERM["xterm.js PTY Terminal"]
+                        end
+
+                        subgraph Gateway_Tier["API Gateway & Router (Go 1.22)"]
+                            ROUTER["Chi Router (:8080)"]
+                            CORS["CORS & Middleware"]
+                            WS_HUB["WebSocket Hub & Connection Manager"]
+                            METRICS["Prometheus Metrics (/metrics)"]
+                        end
+
+                        subgraph Core_Services["Core Application Services"]
+                            MASTER["Master Intent Agent Router"]
+                            STORE["GORM Store Engine (Postgres / SQLite)"]
+                            DAYTONA_CLIENT["Daytona Sandbox Manager"]
+                            JOB_Q["Redis Job Queue Interface"]
+                        end
+
+                        subgraph Async_Workers["Background Worker Pool"]
+                            WORKER["Worker Daemon Process"]
+                            DEV_AGENT["App Developer Agent"]
+                            DEP_AGENT["App Deployer Agent"]
+                            LLM_AGENT["LLM Deployer Agent"]
+                            MAINT_AGENT["App Maintainer Agent"]
+                        end
+
+                        subgraph External_Cloud["External Cloud & Compute Layer"]
+                            DAYTONA_SANDBOX["Daytona Cloud Sandboxes (Isolated Runtimes)"]
+                            AZURE["Azure Resource Manager API (VMs, Public IPs, Key Vault)"]
+                            REDIS_SERVER["Redis Server (:6379 LPUSH/BRPOP & PubSub)"]
+                            DB_FILE["SQLite (saas_platform.db) / Postgres DB"]
+                        end
+
+                        UI -->|HTTP REST API| ROUTER
+                        UI -->|WebSocket Stream| WS_HUB
+                        TERM -->|Raw PTY WebSocket| ROUTER
+
+                        ROUTER --> MASTER
+                        ROUTER --> STORE
+                        ROUTER --> DAYTONA_CLIENT
+                        ROUTER --> WS_HUB
+
+                        MASTER -->|Enqueue Job| JOB_Q
+                        JOB_Q -->|LPUSH queue:agent_jobs| REDIS_SERVER
+                        REDIS_SERVER -->|BRPOP queue:agent_jobs| WORKER
+
+                        WORKER --> DEV_AGENT
+                        WORKER --> DEP_AGENT
+                        WORKER --> LLM_AGENT
+                        WORKER --> MAINT_AGENT
+
+                        DEV_AGENT --> DAYTONA_CLIENT
+                        DEP_AGENT --> AZURE
+                        LLM_AGENT --> AZURE
+                        MAINT_AGENT --> DAYTONA_CLIENT
+
+                        DAYTONA_CLIENT --> DAYTONA_SANDBOX
+                        STORE --> DB_FILE
+                        WS_HUB -->|PubSub Events| REDIS_SERVER
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Multi-Agent Workflow Section -->
+        <section id="workflow" class="section-block">
+            <div class="section-header">
+                <span class="section-icon">🤖</span>
+                <h2 class="section-title">2. Multi-Agent Execution & Routing Workflow</h2>
+            </div>
+
+            <div class="glass-card">
+                <div class="card-title">
+                    <span>Intent Classification & Agent Routing Sequence</span>
+                    <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted);">Sequence Diagram</span>
+                </div>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+                    When a user sends a prompt or selects a task in the Wizard, the Master Agent inspects the user intent, dispatches the task to the dedicated sub-agent, streams progress over WebSocket, and updates the Daytona Cloud Sandbox.
+                </p>
+                <div class="mermaid-wrapper">
+                    <div class="mermaid">
+                    sequenceDiagram
+                        autonumber
+                        actor User
+                        participant Frontend as React 19 Frontend
+                        participant Server as Go API Server
+                        participant Master as Master Agent Router
+                        participant Redis as Redis Queue / Memory
+                        participant Worker as Async Worker Daemon
+                        participant Agent as Target Sub-Agent
+                        participant Sandbox as Daytona Cloud Sandbox
+                        participant Client as WebSocket Stream
+
+                        User->>Frontend: Submit prompt / Launch Wizard Task
+                        Frontend->>Server: POST /api/v1/projects/{id}/messages
+                        Server->>Master: ProcessTurn(projectID, prompt)
+                        Master->>Master: ClassifyIntent(prompt) -> [Build / Deploy App / Deploy LLM / Maintain]
+                        Master->>Server: Create Job in Store & Return TurnResult
+                        Server->>Frontend: HTTP 200 OK (User & Assistant Messages + JobID)
+                        Server->>Redis: EnqueueJob(JobPayload)
+                        Server->>Client: BroadcastEvent("system_status", Agent Activated)
+
+                        Redis->>Worker: Dequeue Job (BRPOP)
+                        Worker->>Agent: Execute Job (e.g. Codegen / Azure Provisioning)
+                        Agent->>Sandbox: Write files / Exec remote build & test
+                        Sandbox-->>Agent: Build execution output & Git status
+                        Agent->>Server: UpdateJob(Status: succeeded, Result)
+                        Worker->>Client: BroadcastEvent("git_status_changed", Uncommitted Files)
+                        Worker->>Client: BroadcastEvent("job_update", Status: succeeded)
+                        Client-->>Frontend: Live update UI, badges & terminal output
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. Async Queue & Event Dispatch Section -->
+        <section id="async-queue" class="section-block">
+            <div class="section-header">
+                <span class="section-icon">⚡</span>
+                <h2 class="section-title">3. Async Job Queue & Real-Time Event Dispatch</h2>
+            </div>
+
+            <div class="glass-card">
+                <div class="card-title">
+                    <span>Task Queue & Event Pub/Sub Architecture</span>
+                </div>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+                    The platform supports high-throughput execution with double-buffered fallbacks: a Redis-backed queue (`queue:agent_jobs`) with an in-memory channel fallback when Redis is absent.
+                </p>
+                <div class="mermaid-wrapper">
+                    <div class="mermaid">
+                    flowchart LR
+                        subgraph Producer
+                            API["API Server Route Handler"]
+                        end
+
+                        subgraph Queue_System["Queue Engine (RedisQueue)"]
+                            PING{"Redis Available?"}
+                            LPUSH["Redis LPUSH queue:agent_jobs"]
+                            BRPOP["Redis BRPOP Worker Loop"]
+                            MEM_CHAN["In-Memory Go Channel (cap 1000)"]
+                            DLQ["DLQ dlq:agent_jobs"]
+                        end
+
+                        subgraph Consumer
+                            WORKER["Worker Consumer Process"]
+                            EXEC["Execute Agent Handler"]
+                        end
+
+                        subgraph PubSub_Realtime["WebSocket Broadcasting"]
+                            PUBSUB["Redis PubSub Channel events:project:{id}"]
+                            HUB["Hub Connection Manager"]
+                            WS_CONNS["Connected Clients (WebSockets)"]
+                        end
+
+                        API --> PING
+                        PING -->|Yes| LPUSH
+                        PING -->|No Fallback| MEM_CHAN
+
+                        LPUSH --> BRPOP
+                        BRPOP --> WORKER
+                        MEM_CHAN --> WORKER
+
+                        WORKER --> EXEC
+                        EXEC -->|Failure| DLQ
+                        EXEC -->|Success Event| HUB
+                        HUB --> PUBSUB
+                        HUB --> WS_CONNS
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. Tech Stack Breakdown Section -->
+        <section id="tech-stack" class="section-block">
+            <div class="section-header">
+                <span class="section-icon">🛠️</span>
+                <h2 class="section-title">4. Technology Stack & Component Matrix</h2>
+            </div>
+
+            <div class="glass-card">
+                <div class="card-title">
+                    <span>Technology Stack Matrix</span>
+                </div>
+                <table class="spec-table">
+                    <thead>
+                        <tr>
+                            <th>Layer / Subsystem</th>
+                            <th>Technology & Version</th>
+                            <th>Key Responsibilities</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Frontend Application</strong></td>
+                            <td><span class="code-inline">React 19</span>, <span class="code-inline">Vite 8.2</span>, <span class="code-inline">Tailwind CSS</span></td>
+                            <td>Single-Page UI, Chat Panel, Model Selector, Interactive Modals, Live Code Diff View.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Terminal Engine</strong></td>
+                            <td><span class="code-inline">@xterm/xterm 5.5</span>, WebSockets</td>
+                            <td>Interactive cloud PTY shell emulation with ANSI color highlight & raw key streaming.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Backend API Gateway</strong></td>
+                            <td><span class="code-inline">Go 1.22</span>, <span class="code-inline">go-chi/chi v5</span></td>
+                            <td>High-performance HTTP API, Request ID tracking, CORS handling, JWT auth endpoints.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Persistence & Store</strong></td>
+                            <td><span class="code-inline">GORM</span> (Postgres / SQLite)</td>
+                            <td>Auto-migrating ORM for Users, Projects, Messages, Skills, SecretRefs, Jobs & Deployments.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Async Task Queue</strong></td>
+                            <td><span class="code-inline">go-redis/v9</span> (Redis 7.x)</td>
+                            <td>Asynchronous LPUSH/BRPOP worker execution queue with DLQ and memory fallback.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Cloud Sandbox Engine</strong></td>
+                            <td><span class="code-inline">Daytona Cloud Sandbox SDK</span></td>
+                            <td>Isolated developer workspace, file tree manipulation, virtual git status & remote exec.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Cloud Infrastructure</strong></td>
+                            <td><span class="code-inline">Azure ARM REST API</span></td>
+                            <td>Programmatic provisioning of Azure Resource Groups, Public IPs, VMs, and Key Vault.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>LLM Inference Engine</strong></td>
+                            <td><span class="code-inline">vLLM</span> / <span class="code-inline">NVIDIA NIM</span></td>
+                            <td>Serving open-weight LLMs (Llama 3, DeepSeek R1, Mistral) on GPU instances.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 5. API & WebSocket Specifications -->
+        <section id="api-specs" class="section-block">
+            <div class="section-header">
+                <span class="section-icon">🔌</span>
+                <h2 class="section-title">5. REST API & WebSocket Endpoint Mapping</h2>
+            </div>
+
+            <div class="glass-card">
+                <div class="card-title">
+                    <span>Endpoint Specification Table</span>
+                </div>
+                <table class="spec-table">
+                    <thead>
+                        <tr>
+                            <th>Protocol</th>
+                            <th>Endpoint URL</th>
+                            <th>Description / Purpose</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="code-inline">POST</span></td>
+                            <td><span class="code-inline">/api/v1/auth/login</span> & <span class="code-inline">/signup</span></td>
+                            <td>Authenticate user credentials and issue dev JWT session token.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="code-inline">GET / POST</span></td>
+                            <td><span class="code-inline">/api/v1/projects</span></td>
+                            <td>List active chat sessions/projects or create a new workspace session.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="code-inline">POST</span></td>
+                            <td><span class="code-inline">/api/v1/projects/{projectId}/messages</span></td>
+                            <td>Dispatch prompt to Master Agent, trigger intent classification and launch async jobs.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="code-inline">GET</span></td>
+                            <td><span class="code-inline">/api/v1/projects/{projectId}/files</span></td>
+                            <td>List file hierarchy inside Daytona Sandbox environment.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="code-inline">GET</span></td>
+                            <td><span class="code-inline">/api/v1/projects/{projectId}/git/status</span></td>
+                            <td>Retrieve modified, added, and deleted file status in sandbox.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="code-inline">POST</span></td>
+                            <td><span class="code-inline">/api/v1/projects/{projectId}/git/push</span></td>
+                            <td>Commit and push sandbox edits to remote Git repository (requires PAT).</td>
+                        </tr>
+                        <tr>
+                            <td><span class="code-inline">POST</span></td>
+                            <td><span class="code-inline">/api/v1/providers/test</span> & <span class="code-inline">/discover</span></td>
+                            <td>Test connectivity and discover available models from custom OpenAI-compatible endpoints.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="code-inline">WS</span></td>
+                            <td><span class="code-inline">/api/v1/projects/{projectId}/stream</span></td>
+                            <td>Real-time multiplexed WebSocket stream for chat tokens, agent logs, and git updates.</td>
+                        </tr>
+                        <tr>
+                            <td><span class="code-inline">WS</span></td>
+                            <td><span class="code-inline">/api/v1/terminal/{sessionToken}</span></td>
+                            <td>Bidirectional terminal session stream for xterm.js interactive sandbox CLI.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 6. Codebase Audit & Bug Report -->
+        <section id="audit-report" class="section-block">
+            <div class="section-header">
+                <span class="section-icon">🔍</span>
+                <h2 class="section-title">6. Codebase Audit & Discovered Issues Report</h2>
+            </div>
+
+            <div class="glass-card">
+                <div class="card-title">
+                    <span>Audit Summary & Fix Verification</span>
+                </div>
+                <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">
+                    A comprehensive static analysis and runtime audit was conducted across Go backend services and React frontend code. Below are the cataloged defects and their applied resolutions:
+                </p>
+
+                <div class="audit-grid">
+                    <div class="audit-card resolved">
+                        <div class="audit-card-header">
+                            <span class="audit-title">1. Redis Queue Consumer Bypass</span>
+                            <span class="audit-badge resolved">Resolved</span>
+                        </div>
+                        <div class="audit-desc">
+                            <span class="code-inline">queue.go</span>: When Redis server was connected, <span class="code-inline">EnqueueJob</span> pushed to Redis <span class="code-inline">queue:agent_jobs</span>, but <span class="code-inline">DequeueJobs</span> only read from internal Go channel.
+                        </div>
+                        <div class="audit-fix">
+                            <strong>Fix Applied:</strong> Added a background <span class="code-inline">BRPop</span> worker loop in <span class="code-inline">NewRedisQueue</span> to continuously pop jobs from Redis list into the processing channel.
+                        </div>
+                    </div>
+
+                    <div class="audit-card resolved">
+                        <div class="audit-card-header">
+                            <span class="audit-title">2. Discarded Job Payload Parameters</span>
+                            <span class="audit-badge resolved">Resolved</span>
+                        </div>
+                        <div class="audit-desc">
+                            <span class="code-inline">cmd/worker/main.go</span>: Worker processing loop initialized an empty <span class="code-inline">payload</span> map and ignored <span class="code-inline">job.Payload</span> json byte array.
+                        </div>
+                        <div class="audit-fix">
+                            <strong>Fix Applied:</strong> Added <span class="code-inline">json.Unmarshal(job.Payload, &payload)</span> so agent task options (tech stack, prompt, repo URL) pass into agents correctly.
+                        </div>
+                    </div>
+
+                    <div class="audit-card resolved">
+                        <div class="audit-card-header">
+                            <span class="audit-title">3. Missing Package Import in Code Generator</span>
+                            <span class="audit-badge resolved">Resolved</span>
+                        </div>
+                        <div class="audit-desc">
+                            <span class="code-inline">appdeveloper.go</span>: Generated <span class="code-inline">/cmd/api/main.go</span> template used <span class="code-inline">time.Now()</span> in <span class="code-inline">/healthz</span> handler, but omitted <span class="code-inline">"time"</span> in import block.
+                        </div>
+                        <div class="audit-fix">
+                            <strong>Fix Applied:</strong> Updated code template header in <span class="code-inline">AppDeveloperAgent</span> to include <span class="code-inline">"time"</span> package import.
+                        </div>
+                    </div>
+
+                    <div class="audit-card resolved">
+                        <div class="audit-card-header">
+                            <span class="audit-title">4. Static Controls in Chat Panel</span>
+                            <span class="audit-badge resolved">Resolved</span>
+                        </div>
+                        <div class="audit-desc">
+                            <span class="code-inline">ChatPanel.jsx</span>: Top bar buttons (Sidebar Toggle, Task Execution Wizard, Config Setup, Favorite Star) were unhandled non-interactive elements.
+                        </div>
+                        <div class="audit-fix">
+                            <strong>Fix Applied:</strong> Wired event callbacks to open <span class="code-inline">TaskWizardModal</span>, <span class="code-inline">ConfigModal</span>, <span class="code-inline">LivePreviewModal</span>, and state toggles.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <p>SaaS Agentic Development Platform — System Documentation & Architecture Specification</p>
+        <p style="font-size: 0.75rem; margin-top: 0.5rem; color: #64748b;">Generated cleanly with Mermaid.js rendering engine.</p>
+    </footer>
+
+    <!-- Initialize Mermaid.js -->
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {
+                darkMode: true,
+                background: '#0b1120',
+                primaryColor: '#1e293b',
+                primaryTextColor: '#f8fafc',
+                primaryBorderColor: '#334155',
+                lineColor: '#38bdf8',
+                secondaryColor: '#0f172a',
+                tertiaryColor: '#1e1b4b'
+            },
+            flowchart: { curve: 'basis' }
+        });
+    </script>
+</body>
+</html>

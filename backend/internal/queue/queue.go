@@ -58,6 +58,20 @@ func NewRedisQueue(redisAddr string) *RedisQueue {
 	} else {
 		log.Printf("🔌 Connected to Redis Server at %s (Pub/Sub & Task Queue Active)", redisAddr)
 		rq.isRealRedis = true
+
+		// Start Redis consumer worker loop
+		go func() {
+			bgCtx := context.Background()
+			for {
+				res, err := rdb.BRPop(bgCtx, 0, "queue:agent_jobs").Result()
+				if err == nil && len(res) == 2 {
+					var job models.Job
+					if err := json.Unmarshal([]byte(res[1]), &job); err == nil {
+						rq.jobs <- &job
+					}
+				}
+			}
+		}()
 	}
 
 	return rq

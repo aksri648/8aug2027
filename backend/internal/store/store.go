@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/saas-agent-platform/backend/internal/auth"
 	"github.com/saas-agent-platform/backend/internal/models"
+	"github.com/saas-agent-platform/backend/internal/secrets"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -17,7 +19,9 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("record not found")
+	ErrNotFound      = errors.New("record not found")
+	ErrUnauthorized  = errors.New("unauthorized: project does not belong to user")
+	ErrAlreadyExists = errors.New("user already exists")
 )
 
 type Store struct {
@@ -87,11 +91,13 @@ func (s *Store) seedDefaultData() {
 	var userCount int64
 	s.db.Model(&models.User{}).Where("id = ?", "user-default").Count(&userCount)
 	if userCount == 0 {
+		hashed, _ := auth.HashPassword("defaultpassword123")
 		defaultUser := &models.User{
-			ID:        "user-default",
-			Email:     "developer@example.com",
-			PlanTier:  "Pro Plan",
-			CreatedAt: time.Now(),
+			ID:           "user-default",
+			Email:        "developer@example.com",
+			PasswordHash: hashed,
+			PlanTier:     "Pro Plan",
+			CreatedAt:    time.Now(),
 		}
 		s.db.Create(defaultUser)
 	}
@@ -146,16 +152,44 @@ func (s *Store) GetUserByEmail(email string) (*models.User, error) {
 	return &u, nil
 }
 
-func (s *Store) CreateUser(email, passwordHash string) (*models.User, error) {
+func (s *Store) AuthenticateUser(email, password string) (*models.User, error) {
+	u, err := s.GetUserByEmail(email)
+	if err != nil {
+		return nil, errors.New("invalid email or password")
+	}
+
+	if !auth.CheckPasswordHash(password, u.PasswordHash) {
+		return nil, errors.New("invalid email or password")
+	}
+
+	return u, nil
+}
+
+func (s *Store) CreateUser(email, plainPassword string) (*models.User, error) {
+	if email == "" || plainPassword == "" {
+		return nil, errors.New("email and password are required")
+	}
+
+	var existing int64
+	s.db.Model(&models.User{}).Where("email = ?", email).Count(&existing)
+	if existing > 0 {
+		return nil, ErrAlreadyExists
+	}
+
+	hashedPassword, err := auth.HashPassword(plainPassword)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
 	u := &models.User{
 		ID:           "user-" + uuid.New().String()[:8],
 		Email:        email,
-		PasswordHash: passwordHash,
+		PasswordHash: hashedPassword,
 		PlanTier:     "Pro Plan",
 		CreatedAt:    time.Now(),
 	}
 	if err := s.db.Create(u).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 	return u, nil
 }
@@ -181,7 +215,18 @@ func (s *Store) GetProject(id string) (*models.Project, error) {
 	return &p, nil
 }
 
+func (s *Store) GetProjectForUser(id, userID string) (*models.Project, error) {
+	var p models.Project
+	if err := s.db.First(&p, "id = ? AND user_id = ?", id, userID).Error; err != nil {
+		return nil, ErrNotFound
+	}
+	return &p, nil
+}
+
 func (s *Store) CreateProject(userID, name string) (*models.Project, error) {
+	if userID == "" {
+		return nil, errors.New("user_id is required to create a project")
+	}
 	if name == "" {
 		name = fmt.Sprintf("Project-%s", uuid.New().String()[:6])
 	}
@@ -199,9 +244,9 @@ func (s *Store) CreateProject(userID, name string) (*models.Project, error) {
 	return p, nil
 }
 
-func (s *Store) UpdateProject(id string, gitRemoteURL string, name string) (*models.Project, error) {
+func (s *Store) UpdateProjectForUser(id, userID, gitRemoteURL, name string) (*models.Project, error) {
 	var p models.Project
-	if err := s.db.First(&p, "id = ?", id).Error; err != nil {
+	if err := s.db.First(&p, "id = ? AND user_id = ?", id, userID).Error; err != nil {
 		return nil, ErrNotFound
 	}
 	updates := map[string]interface{}{"updated_at": time.Now()}
@@ -213,22 +258,39 @@ func (s *Store) UpdateProject(id string, gitRemoteURL string, name string) (*mod
 		updates["name"] = name
 		p.Name = name
 	}
-	s.db.Model(&p).Updates(updates)
+	if err := s.db.Model(&p).Updates(updates).Error; err != nil {
+		return nil, err
+	}
 	return &p, nil
 }
 
-func (s *Store) DeleteProject(id string) error {
-	s.db.Delete(&models.Project{}, "id = ?", id)
-	s.db.Delete(&models.Message{}, "project_id = ?", id)
-	s.db.Delete(&models.SecretRef{}, "project_id = ?", id)
-	return nil
+func (s *Store) DeleteProjectForUser(id, userID string) error {
+	var p models.Project
+	if err := s.db.First(&p, "id = ? AND user_id = ?", id, userID).Error; err != nil {
+		return ErrNotFound
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&models.Project{}, "id = ?", id).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&models.Message{}, "project_id = ?", id).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&models.SecretRef{}, "project_id = ?", id).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&models.Job{}, "project_id = ?", id).Error; err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 // Message methods
 func (s *Store) ListMessages(projectID string) ([]*models.Message, error) {
 	var msgs []*models.Message
 	if err := s.db.Where("project_id = ?", projectID).Order("created_at asc").Find(&msgs).Error; err != nil {
-		return []*models.Message{}, nil
+		return nil, err
 	}
 	return msgs, nil
 }
@@ -242,7 +304,7 @@ func (s *Store) AddMessage(projectID, role, content string) (*models.Message, er
 		CreatedAt: time.Now(),
 	}
 	if err := s.db.Create(msg).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to save message: %w", err)
 	}
 	return msg, nil
 }
@@ -271,41 +333,56 @@ func (s *Store) CreateSkill(userID, name, description, content, source string) (
 		CreatedAt:   time.Now(),
 	}
 	if err := s.db.Create(sk).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create skill: %w", err)
 	}
 	return sk, nil
 }
 
-func (s *Store) DeleteSkill(id string) error {
-	s.db.Delete(&models.Skill{}, "id = ?", id)
+func (s *Store) DeleteSkill(id, userID string) error {
+	res := s.db.Delete(&models.Skill{}, "id = ? AND user_id = ?", id, userID)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
 	return nil
 }
 
 // Secrets methods
 func (s *Store) SaveSecret(projectID, secretType, value string) error {
+	encryptedVal, err := secrets.EncryptSecret(value)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt secret: %w", err)
+	}
+
 	var sec models.SecretRef
-	err := s.db.Where("project_id = ? AND type = ?", projectID, secretType).First(&sec).Error
+	err = s.db.Where("project_id = ? AND type = ?", projectID, secretType).First(&sec).Error
 	if err != nil {
 		sec = models.SecretRef{
 			ID:          "sec-" + uuid.New().String()[:8],
 			ProjectID:   projectID,
 			Type:        secretType,
-			SecretValue: value,
+			SecretValue: encryptedVal,
 			CreatedAt:   time.Now(),
 		}
-		s.db.Create(&sec)
+		if err := s.db.Create(&sec).Error; err != nil {
+			return fmt.Errorf("failed to save secret: %w", err)
+		}
 	} else {
-		s.db.Model(&sec).Update("secret_value", value)
+		if err := s.db.Model(&sec).Update("secret_value", encryptedVal).Error; err != nil {
+			return fmt.Errorf("failed to update secret: %w", err)
+		}
 	}
 	return nil
 }
 
 func (s *Store) GetSecretsPresence(projectID string) models.SecretsPresence {
-	var secrets []models.SecretRef
-	s.db.Where("project_id = ?", projectID).Find(&secrets)
+	var secretRefs []models.SecretRef
+	s.db.Where("project_id = ?", projectID).Find(&secretRefs)
 
 	presence := models.SecretsPresence{}
-	for _, sec := range secrets {
+	for _, sec := range secretRefs {
 		switch sec.Type {
 		case "github_pat":
 			presence.GitHubPAT = true
@@ -325,7 +402,11 @@ func (s *Store) GetSecretValue(projectID, secretType string) (string, error) {
 	if err := s.db.Where("project_id = ? AND type = ?", projectID, secretType).First(&sec).Error; err != nil {
 		return "", ErrNotFound
 	}
-	return sec.SecretValue, nil
+	decrypted, err := secrets.DecryptSecret(sec.SecretValue)
+	if err != nil {
+		return "", err
+	}
+	return decrypted, nil
 }
 
 // Job methods
@@ -340,7 +421,7 @@ func (s *Store) CreateJob(projectID, jobType string, payload []byte) (*models.Jo
 		UpdatedAt: time.Now(),
 	}
 	if err := s.db.Create(job).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create job: %w", err)
 	}
 	return job, nil
 }
@@ -348,6 +429,17 @@ func (s *Store) CreateJob(projectID, jobType string, payload []byte) (*models.Jo
 func (s *Store) GetJob(id string) (*models.Job, error) {
 	var job models.Job
 	if err := s.db.First(&job, "id = ?", id).Error; err != nil {
+		return nil, ErrNotFound
+	}
+	return &job, nil
+}
+
+func (s *Store) GetJobForUser(id, userID string) (*models.Job, error) {
+	var job models.Job
+	err := s.db.Joins("JOIN projects ON projects.id = jobs.project_id").
+		Where("jobs.id = ? AND projects.user_id = ?", id, userID).
+		First(&job).Error
+	if err != nil {
 		return nil, ErrNotFound
 	}
 	return &job, nil
@@ -371,6 +463,8 @@ func (s *Store) UpdateJob(id string, status string, result []byte, errStr *strin
 		job.Error = errStr
 	}
 	job.Status = status
-	s.db.Model(&job).Updates(updates)
+	if err := s.db.Model(&job).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("failed to update job: %w", err)
+	}
 	return &job, nil
 }

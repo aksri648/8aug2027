@@ -1,6 +1,11 @@
 package metrics
 
 import (
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -45,3 +50,34 @@ var (
 		},
 	)
 )
+
+type responseWriterDelegator struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriterDelegator) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func PrometheusMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rw := &responseWriterDelegator{ResponseWriter: w, statusCode: http.StatusOK}
+
+		next.ServeHTTP(rw, r)
+
+		duration := time.Since(start).Seconds()
+
+		routePattern := r.URL.Path
+		rctx := chi.RouteContext(r.Context())
+		if rctx != nil && rctx.RoutePattern() != "" {
+			routePattern = rctx.RoutePattern()
+		}
+
+		statusStr := strconv.Itoa(rw.statusCode)
+		HTTPRequestsTotal.WithLabelValues(routePattern, r.Method, statusStr).Inc()
+		HTTPRequestDurationSeconds.WithLabelValues(routePattern, r.Method).Observe(duration)
+	})
+}
