@@ -24,6 +24,8 @@ export default function App() {
   const [secretType, setSecretType] = useState('github_pat');
   const [systemStatusEvents, setSystemStatusEvents] = useState([]);
   const [streamingMessage, setStreamingMessage] = useState('');
+  const [isSandboxStarting, setIsSandboxStarting] = useState(false);
+  const [sandboxProgress, setSandboxProgress] = useState(0);
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('auth_token') || '');
   const wsRef = useRef(null);
 
@@ -261,6 +263,21 @@ export default function App() {
       }
     }
 
+    const isFirstMessage = messages.length === 0;
+    if (isFirstMessage) {
+      setIsSandboxStarting(true);
+      setSandboxProgress(15);
+      const interval = setInterval(() => {
+        setSandboxProgress((prev) => {
+          if (prev >= 90) {
+            clearInterval(interval);
+            return 95;
+          }
+          return prev + 25;
+        });
+      }, 350);
+    }
+
     const optUserMsg = { id: 'temp-' + Date.now(), role: 'user', content };
     setMessages((prev) => [...prev, optUserMsg]);
     setStreamingMessage('');
@@ -321,6 +338,11 @@ export default function App() {
       console.error('Error in streaming message send:', e);
       setStreamingMessage('');
       fetchMessages(targetProjectID);
+    } finally {
+      setSandboxProgress(100);
+      setTimeout(() => {
+        setIsSandboxStarting(false);
+      }, 400);
     }
   };
 
@@ -385,6 +407,8 @@ export default function App() {
         onSendMessage={handleSendMessage}
         streamingMessage={streamingMessage}
         systemStatusEvents={systemStatusEvents}
+        isSandboxStarting={isSandboxStarting}
+        sandboxProgress={sandboxProgress}
         onNewChat={handleCreateNewChat}
         onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
         onOpenTaskWizard={() => setOpenModal('wizard')}

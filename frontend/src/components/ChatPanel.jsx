@@ -8,6 +8,8 @@ export default function ChatPanel({
   onSendMessage,
   streamingMessage,
   systemStatusEvents,
+  isSandboxStarting,
+  sandboxProgress,
   onNewChat,
   onToggleSidebar,
   onOpenTaskWizard,
@@ -322,6 +324,45 @@ export default function ChatPanel({
           ))}
         </div>
       </div>
+
+      {/* Starting Daytona Cloud Sandbox Progress Modal */}
+      {isSandboxStarting && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1b1d24] border border-[#2d313e] rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 text-center animate-in fade-in zoom-in duration-200">
+            <div className="w-14 h-14 rounded-2xl bg-[#2a1d18] border border-[#d97757]/40 flex items-center justify-center mx-auto shadow-inner">
+              <Cpu className="w-7 h-7 text-[#d97757] animate-pulse" />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-white tracking-wide">
+                Initializing Daytona Cloud Sandbox...
+              </h3>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                Provisioning isolated container workspace, setting up runtime environment & starting 10-min inactivity timer
+              </p>
+            </div>
+
+            {/* Progress Bar Container */}
+            <div className="space-y-1.5 pt-2">
+              <div className="flex justify-between text-[11px] font-mono font-semibold">
+                <span className="text-[#d97757]">Daytona Container Progress</span>
+                <span className="text-gray-300">{sandboxProgress}%</span>
+              </div>
+              <div className="w-full h-3 bg-[#242733] rounded-full overflow-hidden p-0.5 border border-[#353a4c]">
+                <div
+                  className="h-full bg-gradient-to-r from-[#d97757] to-amber-500 rounded-full transition-all duration-300 shadow-sm"
+                  style={{ width: `${sandboxProgress}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-center space-x-2 text-[11px] text-gray-400 pt-1 font-mono">
+              <Sparkles className="w-3.5 h-3.5 text-[#d97757] animate-spin" />
+              <span>Container spin-up active...</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
