@@ -948,22 +948,29 @@ func (s *Server) handleCreateTerminalSession(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-func buildDaytonaNoVNCURL(serverURL, workspaceID string) string {
+func buildDaytonaNoVNCURL(serverURL, workspaceID, projectID string) string {
 	if custom := os.Getenv("DAYTONA_NOVNC_URL"); custom != "" {
 		return custom
 	}
+
+	apiKey := os.Getenv("DAYTONA_API_KEY")
 	if serverURL == "" {
 		serverURL = os.Getenv("DAYTONA_SERVER_URL")
 	}
-	if serverURL == "" {
-		return fmt.Sprintf("https://app.daytona.io/workspace/%s/novnc/vnc.html?autoconnect=true", workspaceID)
+
+	if serverURL != "" {
+		trimmed := strings.TrimRight(serverURL, "/")
+		trimmed = strings.TrimSuffix(trimmed, "/api")
+		trimmed = strings.TrimRight(trimmed, "/")
+		u := fmt.Sprintf("%s/workspace/%s/novnc/vnc.html?autoconnect=true", trimmed, workspaceID)
+		if apiKey != "" {
+			u += fmt.Sprintf("&apiKey=%s", apiKey)
+		}
+		return u
 	}
 
-	trimmed := strings.TrimRight(serverURL, "/")
-	trimmed = strings.TrimSuffix(trimmed, "/api")
-	trimmed = strings.TrimRight(trimmed, "/")
-
-	return fmt.Sprintf("%s/workspace/%s/novnc/vnc.html?autoconnect=true", trimmed, workspaceID)
+	// Default fallback to local Daytona Sandbox preview endpoint
+	return fmt.Sprintf("/api/v1/projects/%s/sandbox/novnc", projectID)
 }
 
 func (s *Server) handleSandboxPreview(w http.ResponseWriter, r *http.Request) {
@@ -977,7 +984,7 @@ func (s *Server) handleSandboxPreview(w http.ResponseWriter, r *http.Request) {
 
 	sb := s.daytonaClient.GetOrCreateSandbox(pID)
 	filesCount := sb.GetFilesCount()
-	noVNCURL := buildDaytonaNoVNCURL("", sb.ID)
+	noVNCURL := buildDaytonaNoVNCURL("", sb.ID, pID)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"project_id":   pID,
@@ -1001,7 +1008,7 @@ func (s *Server) handleServeSandboxNoVNC(w http.ResponseWriter, r *http.Request)
 	}
 
 	sb := s.daytonaClient.GetOrCreateSandbox(pID)
-	targetVncURL := buildDaytonaNoVNCURL("", sb.ID)
+	targetVncURL := buildDaytonaNoVNCURL("", sb.ID, pID)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	html := fmt.Sprintf(`<!DOCTYPE html>
