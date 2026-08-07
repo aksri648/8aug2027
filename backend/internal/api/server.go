@@ -166,17 +166,14 @@ func (s *Server) registerTerminalSession(token, projectID, userID string) {
 	}
 }
 
-func (s *Server) verifyTerminalSessionToken(token, userID string) (string, error) {
+func (s *Server) verifyTerminalSessionToken(token string) (string, string, error) {
 	s.termMu.RLock()
 	defer s.termMu.RUnlock()
 	info, ok := s.terminalSessions[token]
 	if !ok {
-		return "", fmt.Errorf("session token not found")
+		return "", "", fmt.Errorf("session token not found")
 	}
-	if info.UserID != userID {
-		return "", fmt.Errorf("unauthorized session token")
-	}
-	return info.ProjectID, nil
+	return info.ProjectID, info.UserID, nil
 }
 
 // Handlers implementation

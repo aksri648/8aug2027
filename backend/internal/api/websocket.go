@@ -233,14 +233,7 @@ func (s *Server) HandleStream(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	sessionToken := chi.URLParam(r, "sessionToken")
 
-	// Validate session token token authorization
-	userID, ok := auth.GetUserIDFromContext(r.Context())
-	if !ok {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
-
-	projectID, err := s.verifyTerminalSessionToken(sessionToken, userID)
+	projectID, _, err := s.verifyTerminalSessionToken(sessionToken)
 	if err != nil {
 		http.Error(w, `{"error":"invalid terminal session token"}`, http.StatusForbidden)
 		return

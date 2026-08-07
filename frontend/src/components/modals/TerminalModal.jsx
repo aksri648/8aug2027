@@ -38,8 +38,11 @@ export default function TerminalModal({ isOpen, onClose, activeProjectID }) {
     const initTerminalSession = async () => {
       try {
         setStatus('connecting');
+        const authToken = localStorage.getItem('auth_token');
+        const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
         const res = await fetch(`/api/v1/projects/${activeProjectID}/terminal/session`, {
           method: 'POST',
+          headers,
         });
         if (!res.ok) throw new Error('Failed session');
         const data = await res.json();
