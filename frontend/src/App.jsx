@@ -216,9 +216,11 @@ export default function App() {
           setUncommittedFiles(event.uncommitted || []);
         } else if (event.type === 'system_status') {
           setSystemStatusEvents((prev) => [...prev, event]);
-        } else if (event.type === 'chat_token') {
-          setStreamingMessage((prev) => prev + event.delta);
-        } else if (event.type === 'chat_message_complete') {
+        } else if (event.type === 'chat_stream_start') {
+          setStreamingMessage('');
+        } else if (event.type === 'chat_token' || event.type === 'chat_stream_chunk') {
+          setStreamingMessage((prev) => prev + (event.delta || event.text || ''));
+        } else if (event.type === 'chat_message_complete' || event.type === 'chat_stream_end') {
           setStreamingMessage('');
           fetchMessages(pID);
         } else if (event.type === 'job_update') {

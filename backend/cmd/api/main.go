@@ -38,8 +38,8 @@ func main() {
 	httpServer := &http.Server{
 		Addr:         ":" + port,
 		Handler:      server.Router(),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  0,
+		WriteTimeout: 0, // Set to 0 to enable HTTP Hijacker for WebSocket streams
 		IdleTimeout:  60 * time.Second,
 	}
 

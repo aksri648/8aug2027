@@ -433,12 +433,28 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Process via Master Agent
-	turnRes, err := s.masterAgent.ProcessTurn(r.Context(), pID, body.Content, body.AgentPayload)
+	// Emit stream start event over WebSocket
+	s.hub.BroadcastEvent(pID, &models.WSEvent{
+		Type: "chat_stream_start",
+	})
+
+	// Process via Master Agent with real-time WebSocket token streaming
+	turnRes, err := s.masterAgent.ProcessTurnWithStream(r.Context(), pID, body.Content, body.AgentPayload, func(token string) {
+		s.hub.BroadcastEvent(pID, &models.WSEvent{
+			Type: "chat_stream_chunk",
+			Text: token,
+		})
+	})
 	if err != nil {
+		s.hub.BroadcastEvent(pID, &models.WSEvent{Type: "chat_stream_end"})
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+
+	// Emit stream end event
+	s.hub.BroadcastEvent(pID, &models.WSEvent{
+		Type: "chat_stream_end",
+	})
 
 	// Add Assistant reply message
 	asstMsg, err := s.store.AddMessage(pID, "assistant", turnRes.AssistantResponse)

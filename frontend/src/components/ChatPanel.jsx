@@ -196,12 +196,15 @@ export default function ChatPanel({
 
             {/* Streaming Token Message */}
             {streamingMessage && (
-              <div className="text-gray-100 text-sm pl-2 space-y-1">
-                <div className="flex items-center space-x-2">
-                  <Sparkles className="w-4 h-4 text-[#d97757] animate-spin" />
-                  <span className="text-xs font-semibold text-[#d97757]">Claude Assistant</span>
+              <div className="w-full text-gray-100 text-sm leading-relaxed pl-2 space-y-1">
+                <div className="flex items-center space-x-2 mb-1">
+                  <Sparkles className="w-4 h-4 text-[#d97757] animate-pulse" />
+                  <span className="text-xs font-semibold text-[#d97757]">AI Assistant (Streaming...)</span>
                 </div>
-                <div className="whitespace-pre-wrap">{streamingMessage}</div>
+                <div className="prose prose-invert max-w-none whitespace-pre-wrap font-sans text-gray-200 bg-[#252525] p-3 rounded-xl border border-[#333333]">
+                  {streamingMessage}
+                  <span className="inline-block w-2 h-4 ml-1 bg-[#d97757] animate-pulse align-middle" />
+                </div>
               </div>
             )}
             <div ref={messagesEndRef} />

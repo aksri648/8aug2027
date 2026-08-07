@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -20,7 +21,7 @@ type LLMClient struct {
 }
 
 type ChatMessage struct {
-	Role    string `json:"role"`    // system, user, assistant
+	Role    string `json:"role"` // system, user, assistant
 	Content string `json:"content"`
 }
 
@@ -28,11 +29,13 @@ type ChatCompletionRequest struct {
 	Model       string        `json:"model"`
 	Messages    []ChatMessage `json:"messages"`
 	Temperature float64       `json:"temperature,omitempty"`
+	Stream      bool          `json:"stream,omitempty"`
 }
 
 type ChatCompletionResponse struct {
 	Choices []struct {
 		Message ChatMessage `json:"message"`
+		Delta   ChatMessage `json:"delta"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
@@ -136,6 +139,98 @@ func (c *LLMClient) Complete(ctx context.Context, systemPrompt, userPrompt strin
 	return "", fmt.Errorf("no response choices returned from LLM")
 }
 
+func (c *LLMClient) CompleteStream(ctx context.Context, systemPrompt, userPrompt string, chunkCallback func(token string)) (string, error) {
+	if !c.HasCredentials() {
+		return "", fmt.Errorf("no LLM API key or base URL configured")
+	}
+
+	messages := []ChatMessage{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userPrompt},
+	}
+
+	reqBody := ChatCompletionRequest{
+		Model:       c.model,
+		Messages:    messages,
+		Temperature: 0.2,
+		Stream:      true,
+	}
+
+	jsonBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	endpoint := c.baseURL + "/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("LLM streaming request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("LLM API returned HTTP %d: %s", resp.StatusCode, string(respBytes))
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	var fullText strings.Builder
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			break
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, ":") {
+			continue
+		}
+
+		if strings.HasPrefix(line, "data: ") {
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				break
+			}
+
+			var streamResp ChatCompletionResponse
+			if json.Unmarshal([]byte(data), &streamResp) == nil && len(streamResp.Choices) > 0 {
+				chunk := streamResp.Choices[0].Delta.Content
+				if chunk == "" {
+					chunk = streamResp.Choices[0].Message.Content
+				}
+				if chunk != "" {
+					fullText.WriteString(chunk)
+					if chunkCallback != nil {
+						chunkCallback(chunk)
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback to non-streaming if stream output was empty
+	if fullText.Len() == 0 {
+		return c.Complete(ctx, systemPrompt, userPrompt)
+	}
+
+	return fullText.String(), nil
+}
+
 func (c *LLMClient) GenerateCodeFiles(ctx context.Context, prompt, stack string) (map[string]string, error) {
 	systemPrompt := `You are an expert AI software architect and full-stack developer.
 Given a user prompt and target tech stack, generate a complete, working codebase.
@@ -153,7 +248,6 @@ Do NOT surround with backticks or extra text. Output strictly raw JSON object fo
 		return nil, err
 	}
 
-	// Clean JSON string if LLM wrapped in ```json ... ```
 	cleaned := strings.TrimSpace(output)
 	if strings.HasPrefix(cleaned, "```json") {
 		cleaned = strings.TrimPrefix(cleaned, "```json")

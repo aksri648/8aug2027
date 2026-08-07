@@ -128,10 +128,14 @@ type LLMPlanAndRouting struct {
 }
 
 func (m *MasterAgent) ProcessTurn(ctx context.Context, projectID string, prompt string, extraPayload map[string]interface{}) (*TurnResult, error) {
+	return m.ProcessTurnWithStream(ctx, projectID, prompt, extraPayload, nil)
+}
+
+func (m *MasterAgent) ProcessTurnWithStream(ctx context.Context, projectID string, prompt string, extraPayload map[string]interface{}, streamCB func(token string)) (*TurnResult, error) {
 	intent := m.ClassifyIntentFallback(prompt)
 	assistantMsg := ""
 
-	// Dynamic LLM Planning & Routing
+	// Dynamic LLM Planning & Routing with streaming
 	if m.llmClient.HasCredentials() {
 		log.Printf("🧠 Invoking Master Agent LLM Planning & Routing for prompt: '%s'...", prompt)
 		systemPrompt := `You are the Lead Master AI Architect & Orchestrator of an Autonomous SaaS Development Platform.
@@ -144,7 +148,13 @@ Your response MUST be a JSON object in this exact schema:
 }`
 		userPrompt := fmt.Sprintf("User Request: %s\nProject ID: %s", prompt, projectID)
 
-		llmOut, err := m.llmClient.Complete(ctx, systemPrompt, userPrompt)
+		var llmOut string
+		var err error
+		if streamCB != nil {
+			llmOut, err = m.llmClient.CompleteStream(ctx, systemPrompt, userPrompt, streamCB)
+		} else {
+			llmOut, err = m.llmClient.Complete(ctx, systemPrompt, userPrompt)
+		}
 		if err == nil {
 			cleaned := strings.TrimSpace(llmOut)
 			if strings.HasPrefix(cleaned, "```json") {
