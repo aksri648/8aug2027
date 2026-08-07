@@ -27,11 +27,31 @@ export default function App() {
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('auth_token') || '');
   const wsRef = useRef(null);
 
-  // Auto-login seeded user if no token exists for demo/dev
+  // Auto-login seeded user and validate auth token
   useEffect(() => {
     const initAuth = async () => {
       let token = localStorage.getItem('auth_token');
-      if (!token) {
+      let valid = false;
+
+      if (token) {
+        try {
+          const testRes = await fetch('/api/v1/projects', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (testRes.ok) {
+            valid = true;
+            setAuthToken(token);
+          } else {
+            localStorage.removeItem('auth_token');
+            setAuthToken('');
+            token = null;
+          }
+        } catch (e) {
+          valid = false;
+        }
+      }
+
+      if (!valid) {
         try {
           const res = await fetch('/api/v1/auth/login', {
             method: 'POST',
