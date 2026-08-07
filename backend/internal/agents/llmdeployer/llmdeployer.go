@@ -95,7 +95,7 @@ func (l *LLMDeployerAgent) ProvisionAzureGPUVM(ctx context.Context, subID, token
 		}
 	}
 
-	// 3. Provision GPU VM Instance (NC / NV series)
+	// 3. Provision GPU VM Instance (NVadsA10v5 series - Full NVIDIA A10 24GB GPU)
 	vmClient, err := armcompute.NewVirtualMachinesClient(subID, cred, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create virtual machines client: %w", err)
@@ -208,7 +208,8 @@ func (l *LLMDeployerAgent) ExecuteDeployJob(ctx context.Context, jobID, projectI
 	rgName := fmt.Sprintf("rg-llm-gpu-%s", slug)
 	vmName := fmt.Sprintf("vm-gpu-%s", slug)
 
-	gpuIP, err := l.ProvisionAzureGPUVM(ctx, azureSubID, token, rgName, vmName, region, "Standard_NV6ads_A10_v5")
+	// Standard_NV36ads_A10_v5: Full NVIDIA A10 GPU (24GB VRAM, 36 vCPUs, 440GB RAM)
+	gpuIP, err := l.ProvisionAzureGPUVM(ctx, azureSubID, token, rgName, vmName, region, "Standard_NV36ads_A10_v5")
 	if err != nil {
 		gpuIP = os.Getenv("LLM_GPU_PUBLIC_IP")
 		if gpuIP == "" {
