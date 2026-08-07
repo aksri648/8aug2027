@@ -287,11 +287,25 @@ func processRealTerminalCmd(dc interface{}, sb *shared.DaytonaSandbox, cmd strin
 		return ""
 	}
 
-	// Real execution using DaytonaClient or Sandbox files/git status
 	parts := strings.Fields(cmd)
+	serverURL := os.Getenv("DAYTONA_SERVER_URL")
+	apiKey := os.Getenv("DAYTONA_API_KEY")
+
+	// If remote Daytona server URL is configured, execute against remote workspace
+	if serverURL != "" {
+		out, err := dc.(*shared.DaytonaClient).ExecRemoteCommand(serverURL, apiKey, sb.ID, cmd)
+		if err == nil && out != "" {
+			return strings.ReplaceAll(out, "\n", "\r\n") + "\r\n"
+		}
+	}
+
 	switch parts[0] {
 	case "ls":
-		items := sb.ListFiles("/")
+		dirPath := "/"
+		if len(parts) > 1 {
+			dirPath = parts[1]
+		}
+		items := sb.ListFiles(dirPath)
 		var sbStr strings.Builder
 		for _, item := range items {
 			if item.IsDir {
@@ -312,25 +326,70 @@ func processRealTerminalCmd(dc interface{}, sb *shared.DaytonaSandbox, cmd strin
 	case "clear":
 		return "\x1b[2J\x1b[H"
 
+	case "cat":
+		if len(parts) < 2 {
+			return "usage: cat <file_path>\r\n"
+		}
+		content, err := sb.ReadFile(parts[1])
+		if err != nil {
+			return fmt.Sprintf("cat: %s: No such file in sandbox\r\n", parts[1])
+		}
+		return strings.ReplaceAll(content, "\n", "\r\n") + "\r\n"
+
+	case "touch":
+		if len(parts) < 2 {
+			return "usage: touch <file_path>\r\n"
+		}
+		sb.WriteFile(parts[1], "")
+		return ""
+
+	case "mkdir":
+		if len(parts) < 2 {
+			return "usage: mkdir <dir_path>\r\n"
+		}
+		sb.WriteFile(parts[1]+"/.keep", "")
+		return ""
+
+	case "echo":
+		if len(parts) > 1 {
+			return strings.Join(parts[1:], " ") + "\r\n"
+		}
+		return "\r\n"
+
+	case "env":
+		return "DAYTONA_SANDBOX=true\r\nPATH=/usr/local/bin:/usr/bin:/bin\r\nSHELL=/bin/bash\r\nUSER=daytona\r\n"
+
+	case "help":
+		return "\x1b[36;1mDaytona Cloud Sandbox Terminal Commands:\x1b[0m\r\n" +
+			"  ls [dir]        - List directory contents\r\n" +
+			"  cat <file>      - Print file content\r\n" +
+			"  pwd             - Print working directory\r\n" +
+			"  git status      - Show git working tree status\r\n" +
+			"  touch <file>    - Create new empty file\r\n" +
+			"  mkdir <dir>     - Create directory\r\n" +
+			"  echo <text>     - Print text to stdout\r\n" +
+			"  clear           - Clear terminal screen\r\n" +
+			"  whoami          - Print current user\r\n" +
+			"  env             - Print environment variables\r\n"
+
 	case "git":
 		if len(parts) > 1 && parts[1] == "status" {
 			uncommitted := sb.GetGitStatus()
 			var sbStr strings.Builder
 			sbStr.WriteString("On branch main\r\nChanges to be committed/modified:\r\n")
 			for _, item := range uncommitted {
-				sbStr.WriteString(fmt.Sprintf("  [%s] %s\r\n", item.Status, item.Path))
+				sbStr.WriteString(fmt.Sprintf("  [\x1b[33m%s\x1b[0m] %s\r\n", item.Status, item.Path))
 			}
 			return sbStr.String()
 		}
-		out, err := dc.(*shared.DaytonaClient).ExecRemoteCommand("", "", sb.ID, cmd)
+		out, err := dc.(*shared.DaytonaClient).ExecRemoteCommand(serverURL, apiKey, sb.ID, cmd)
 		if err != nil {
 			return fmt.Sprintf("git error: %v\r\n", err)
 		}
 		return strings.ReplaceAll(out, "\n", "\r\n") + "\r\n"
 
 	default:
-		// Execute command on remote workspace
-		out, err := dc.(*shared.DaytonaClient).ExecRemoteCommand("", "", sb.ID, cmd)
+		out, err := dc.(*shared.DaytonaClient).ExecRemoteCommand(serverURL, apiKey, sb.ID, cmd)
 		if err != nil {
 			return fmt.Sprintf("exec error: %v\r\n", err)
 		}

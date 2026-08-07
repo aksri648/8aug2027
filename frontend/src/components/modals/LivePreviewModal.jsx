@@ -7,7 +7,8 @@ export default function LivePreviewModal({ isOpen, onClose, activeProjectID, act
   const [loading, setLoading] = useState(true);
   const [previewInfo, setPreviewInfo] = useState(null);
 
-  const previewUrl = `/api/v1/projects/${activeProjectID}/sandbox/app`;
+  const authToken = localStorage.getItem('auth_token');
+  const previewUrl = `/api/v1/projects/${activeProjectID}/sandbox/app${authToken ? `?token=${authToken}` : ''}`;
 
   useEffect(() => {
     if (isOpen) {
@@ -17,7 +18,8 @@ export default function LivePreviewModal({ isOpen, onClose, activeProjectID, act
 
   const fetchPreviewInfo = async () => {
     try {
-      const res = await fetch(`/api/v1/projects/${activeProjectID}/sandbox/preview`);
+      const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : {};
+      const res = await fetch(`/api/v1/projects/${activeProjectID}/sandbox/preview`, { headers });
       if (res.ok) {
         const data = await res.json();
         setPreviewInfo(data);

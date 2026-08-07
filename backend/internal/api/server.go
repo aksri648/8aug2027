@@ -151,8 +151,10 @@ func (s *Server) setupRoutes() {
 
 			// WebSockets
 			r.Get("/projects/{projectId}/stream", s.HandleStream)
-			r.Get("/terminal/{sessionToken}", s.HandleTerminalWS)
 		})
+
+		// Terminal WebSocket connection (authenticated via sessionToken)
+		r.Get("/terminal/{sessionToken}", s.HandleTerminalWS)
 	})
 }
 
@@ -977,6 +979,16 @@ func (s *Server) handleServeSandboxApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sb := s.daytonaClient.GetOrCreateSandbox(pID)
+
+	// Check if generated HTML files exist in sandbox
+	htmlPaths := []string{"/index.html", "index.html", "/public/index.html", "/dist/index.html"}
+	for _, hp := range htmlPaths {
+		if content, err := sb.ReadFile(hp); err == nil && strings.TrimSpace(content) != "" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Write([]byte(content))
+			return
+		}
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	html := fmt.Sprintf(`<!DOCTYPE html>
