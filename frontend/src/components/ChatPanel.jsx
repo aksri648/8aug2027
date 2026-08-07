@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, Star, SlidersHorizontal, ChevronDown, Plus, ArrowUp, Sparkles, Cpu, Wrench, Eye } from 'lucide-react';
+import { Menu, Star, SlidersHorizontal, ChevronDown, Plus, ArrowUp, Sparkles, Cpu, Wrench, Eye, Bot } from 'lucide-react';
+import MarkdownRenderer from './MarkdownRenderer';
 
 export default function ChatPanel({
   activeProject,
@@ -185,8 +186,8 @@ export default function ChatPanel({
                         <span className="text-[10px] text-gray-500 font-mono">ADK Agent Engine</span>
                       </div>
 
-                      <div className="prose prose-invert max-w-none whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-200">
-                        {msg.content}
+                      <div className="prose prose-invert max-w-none font-sans text-sm leading-relaxed text-gray-200">
+                        <MarkdownRenderer content={msg.content} />
                       </div>
 
                       {/* Formatted UI Action & Question Card Component */}
@@ -249,8 +250,8 @@ export default function ChatPanel({
                   <Sparkles className="w-4 h-4 text-[#d97757] animate-pulse" />
                   <span className="text-xs font-semibold text-[#d97757]">AI Assistant (Streaming Token Output...)</span>
                 </div>
-                <div className="prose prose-invert max-w-none whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-200 bg-[#252730] p-3.5 rounded-xl border border-[#333642]">
-                  {streamingMessage}
+                <div className="prose prose-invert max-w-none font-sans text-sm leading-relaxed text-gray-200 bg-[#252730] p-3.5 rounded-xl border border-[#333642]">
+                  <MarkdownRenderer content={streamingMessage} />
                   <span className="inline-block w-2 h-4 ml-1 bg-[#d97757] animate-pulse align-middle" />
                 </div>
               </div>
