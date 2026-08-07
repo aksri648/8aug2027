@@ -15,6 +15,7 @@ frontend/.env
 *.dll
 *.so
 *.dylib
+backend/api_server
 /tmp/
 
 # Databases
