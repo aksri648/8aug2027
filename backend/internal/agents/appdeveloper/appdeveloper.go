@@ -34,6 +34,7 @@ type CodegenResult struct {
 
 func (a *AppDeveloperAgent) ExecuteCodegenJob(ctx context.Context, jobID, projectID string, payload map[string]string) (*CodegenResult, error) {
 	sb := a.daytonaClient.GetOrCreateSandbox(projectID)
+	sb.EnsureRunning()
 
 	prompt := payload["prompt"]
 	stack := payload["stack"]

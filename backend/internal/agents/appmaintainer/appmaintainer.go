@@ -58,6 +58,7 @@ func (m *AppMaintainerAgent) ExecuteMaintainJob(ctx context.Context, jobID, proj
 	}
 
 	sb := m.daytonaClient.GetOrCreateSandbox(projectID)
+	sb.EnsureRunning()
 
 	log.Printf("🤖 Invoking LLM API for bug diagnosis & patch synthesis (Prompt: %s)...", prompt)
 	updatedFiles, diagnosis, err := m.llmClient.GenerateBugFix(ctx, prompt, sb.Files)

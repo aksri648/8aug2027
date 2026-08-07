@@ -14,14 +14,43 @@ import (
 	"github.com/saas-agent-platform/backend/internal/models"
 )
 
-// DaytonaSandbox represents a project's Daytona cloud sandbox workspace
 type DaytonaSandbox struct {
-	ID            string
-	ProjectID     string
-	Files         map[string]string // path -> content
-	BaseFiles     map[string]string // path -> original content for diff computation
-	GitStatus     []models.GitStatusItem
-	mu            sync.RWMutex
+	ID           string
+	ProjectID    string
+	Status       string            // "running", "paused"
+	LastActiveAt time.Time
+	Files        map[string]string // path -> content
+	BaseFiles    map[string]string // path -> original content for diff computation
+	GitStatus    []models.GitStatusItem
+	pauseTimer   *time.Timer
+	mu           sync.RWMutex
+}
+
+func (sb *DaytonaSandbox) Touch() {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	sb.LastActiveAt = time.Now()
+	sb.Status = "running"
+	if sb.pauseTimer != nil {
+		sb.pauseTimer.Stop()
+	}
+	// Auto-pause sandbox after 10 minutes of inactivity
+	sb.pauseTimer = time.AfterFunc(10*time.Minute, func() {
+		sb.mu.Lock()
+		defer sb.mu.Unlock()
+		fmt.Printf("⏸️ Daytona Cloud Sandbox '%s' for Project '%s' auto-paused after 10 min inactivity\n", sb.ID, sb.ProjectID)
+		sb.Status = "paused"
+	})
+}
+
+func (sb *DaytonaSandbox) EnsureRunning() {
+	sb.mu.Lock()
+	if sb.Status == "paused" {
+		fmt.Printf("▶️ Automatically resuming paused Daytona Cloud Sandbox '%s' for Project '%s' on task prompt\n", sb.ID, sb.ProjectID)
+		sb.Status = "running"
+	}
+	sb.mu.Unlock()
+	sb.Touch()
 }
 
 type DaytonaClient struct {
@@ -51,13 +80,16 @@ func (c *DaytonaClient) GetOrCreateSandbox(projectID string) *DaytonaSandbox {
 	sb, exists := c.sandboxes[projectID]
 	if !exists {
 		sb = &DaytonaSandbox{
-			ID:        "sb-" + projectID,
-			ProjectID: projectID,
-			Files:     make(map[string]string),
-			BaseFiles: make(map[string]string),
-			GitStatus: []models.GitStatusItem{},
+			ID:           "sb-" + projectID,
+			ProjectID:    projectID,
+			Status:       "running",
+			LastActiveAt: time.Now(),
+			Files:        make(map[string]string),
+			BaseFiles:    make(map[string]string),
+			GitStatus:    []models.GitStatusItem{},
 		}
 		c.sandboxes[projectID] = sb
+		go sb.Touch()
 	}
 	return sb
 }

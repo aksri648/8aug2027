@@ -273,6 +273,10 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+
+	// Instantly open/provision Daytona Cloud Sandbox in the background for this conversation
+	go s.daytonaClient.GetOrCreateSandbox(p.ID)
+
 	writeJSON(w, http.StatusCreated, p)
 }
 
