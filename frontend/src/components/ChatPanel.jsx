@@ -162,24 +162,72 @@ export default function ChatPanel({
                 );
               }
 
+              const isUser = msg.role === 'user';
+
               return (
                 <div
                   key={msg.id}
-                  className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                  className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
                 >
-                  {msg.role === 'user' ? (
-                    <div className="bg-[#343434] text-white px-5 py-3 rounded-2xl max-w-[85%] text-sm leading-relaxed shadow-xs">
+                  {isUser ? (
+                    /* User Chat Bubble */
+                    <div className="bg-[#2d3039] text-white px-5 py-3.5 rounded-2xl rounded-tr-none shadow-md border border-[#3b3e4a] max-w-[85%] text-sm leading-relaxed">
                       {msg.content}
                     </div>
                   ) : (
-                    <div className="w-full text-gray-100 text-sm leading-relaxed space-y-2 pl-2">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <Sparkles className="w-4 h-4 text-[#d97757]" />
-                        <span className="text-xs font-semibold text-[#d97757]">Claude Assistant</span>
+                    /* AI Chat Bubble */
+                    <div className="bg-[#1e2026] text-gray-100 px-5 py-4 rounded-2xl rounded-tl-none shadow-md border border-[#2b2d36] max-w-[92%] w-full space-y-3">
+                      <div className="flex items-center justify-between border-b border-[#2b2d36] pb-2 mb-1">
+                        <div className="flex items-center space-x-2">
+                          <Sparkles className="w-4 h-4 text-[#d97757]" />
+                          <span className="text-xs font-bold tracking-wide text-[#d97757]">AI Assistant</span>
+                        </div>
+                        <span className="text-[10px] text-gray-500 font-mono">ADK Agent Engine</span>
                       </div>
-                      <div className="prose prose-invert max-w-none whitespace-pre-wrap font-sans">
+
+                      <div className="prose prose-invert max-w-none whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-200">
                         {msg.content}
                       </div>
+
+                      {/* Formatted UI Action & Question Card Component */}
+                      {msg.content && (msg.content.toLowerCase().includes("how can i assist") || msg.content.toLowerCase().includes("option") || msg.content.toLowerCase().includes("select")) && (
+                        <div className="mt-3 pt-3 border-t border-[#2b2d36] space-y-2">
+                          <div className="text-[11px] font-semibold text-gray-300 flex items-center space-x-1.5">
+                            <Bot className="w-3.5 h-3.5 text-[#d97757]" />
+                            <span>Quick Task Actions & Choices</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              onClick={() => onSendMessage("Build a Go 1.22 REST API microservice with Docker containerization")}
+                              className="text-left p-2.5 bg-[#262830] hover:bg-[#2d303b] border border-[#363845] rounded-xl text-xs text-gray-200 transition-colors"
+                            >
+                              <span className="font-semibold block text-[#d97757]">⚡ Build Go REST API</span>
+                              <span className="text-[11px] text-gray-400">Generate Go 1.22 codebase</span>
+                            </button>
+                            <button
+                              onClick={() => onSendMessage("Build a React + Vite + Tailwind CSS web dashboard application")}
+                              className="text-left p-2.5 bg-[#262830] hover:bg-[#2d303b] border border-[#363845] rounded-xl text-xs text-gray-200 transition-colors"
+                            >
+                              <span className="font-semibold block text-emerald-400">🎨 Build React App</span>
+                              <span className="text-[11px] text-gray-400">Generate React SPA</span>
+                            </button>
+                            <button
+                              onClick={() => onSendMessage("Provision Azure Virtual Machine infrastructure for application deployment")}
+                              className="text-left p-2.5 bg-[#262830] hover:bg-[#2d303b] border border-[#363845] rounded-xl text-xs text-gray-200 transition-colors"
+                            >
+                              <span className="font-semibold block text-blue-400">☁️ Azure Cloud Deploy</span>
+                              <span className="text-[11px] text-gray-400">Provision Azure VM</span>
+                            </button>
+                            <button
+                              onClick={() => onSendMessage("Diagnose and fix reported application errors in sandbox workspace")}
+                              className="text-left p-2.5 bg-[#262830] hover:bg-[#2d303b] border border-[#363845] rounded-xl text-xs text-gray-200 transition-colors"
+                            >
+                              <span className="font-semibold block text-purple-400">🔧 Fix Application Bug</span>
+                              <span className="text-[11px] text-gray-400">App Maintainer patch</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -194,14 +242,14 @@ export default function ChatPanel({
               </div>
             ))}
 
-            {/* Streaming Token Message */}
+            {/* Streaming Token Message Bubble */}
             {streamingMessage && (
-              <div className="w-full text-gray-100 text-sm leading-relaxed pl-2 space-y-1">
+              <div className="bg-[#1e2026] text-gray-100 px-5 py-4 rounded-2xl rounded-tl-none shadow-md border border-[#2b2d36] max-w-[92%] w-full space-y-2">
                 <div className="flex items-center space-x-2 mb-1">
                   <Sparkles className="w-4 h-4 text-[#d97757] animate-pulse" />
-                  <span className="text-xs font-semibold text-[#d97757]">AI Assistant (Streaming...)</span>
+                  <span className="text-xs font-semibold text-[#d97757]">AI Assistant (Streaming Token Output...)</span>
                 </div>
-                <div className="prose prose-invert max-w-none whitespace-pre-wrap font-sans text-gray-200 bg-[#252525] p-3 rounded-xl border border-[#333333]">
+                <div className="prose prose-invert max-w-none whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-200 bg-[#252730] p-3.5 rounded-xl border border-[#333642]">
                   {streamingMessage}
                   <span className="inline-block w-2 h-4 ml-1 bg-[#d97757] animate-pulse align-middle" />
                 </div>

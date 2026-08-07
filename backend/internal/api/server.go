@@ -117,6 +117,7 @@ func (s *Server) setupRoutes() {
 			// Chat Messages
 			r.Get("/projects/{projectId}/messages", s.handleListMessages)
 			r.Post("/projects/{projectId}/messages", s.handleCreateMessage)
+			r.Post("/projects/{projectId}/messages/stream", s.handleCreateMessageStream)
 
 			// Sandbox Files & Git
 			r.Get("/projects/{projectId}/files", s.handleListFiles)
@@ -491,6 +492,92 @@ func (s *Server) handleCreateMessage(w http.ResponseWriter, r *http.Request) {
 		"assistant_message_id": asstMsg.ID,
 		"job_id":               turnRes.JobID,
 	})
+}
+
+func (s *Server) handleCreateMessageStream(w http.ResponseWriter, r *http.Request) {
+	pID := chi.URLParam(r, "projectId")
+	userID, _ := auth.GetUserIDFromContext(r.Context())
+
+	if _, err := s.store.GetProjectForUser(pID, userID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	var body struct {
+		Content      string                 `json:"content"`
+		AgentPayload map[string]interface{} `json:"agent_payload"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		errBytes, _ := json.Marshal(map[string]string{"error": "invalid JSON body"})
+		fmt.Fprintf(w, "data: %s\n\n", errBytes)
+		flusher.Flush()
+		return
+	}
+
+	if strings.TrimSpace(body.Content) == "" {
+		errBytes, _ := json.Marshal(map[string]string{"error": "message content cannot be empty"})
+		fmt.Fprintf(w, "data: %s\n\n", errBytes)
+		flusher.Flush()
+		return
+	}
+
+	userMsg, _ := s.store.AddMessage(pID, "user", body.Content)
+	userMsgBytes, _ := json.Marshal(map[string]interface{}{"type": "user_msg", "user_message": userMsg})
+	fmt.Fprintf(w, "data: %s\n\n", userMsgBytes)
+	flusher.Flush()
+
+	turnRes, err := s.masterAgent.ProcessTurnWithStream(r.Context(), pID, body.Content, body.AgentPayload, func(token string) {
+		tokenJSON, _ := json.Marshal(map[string]string{"type": "delta", "delta": token})
+		fmt.Fprintf(w, "data: %s\n\n", tokenJSON)
+		flusher.Flush()
+	})
+
+	if err != nil {
+		errJSON, _ := json.Marshal(map[string]string{"type": "error", "error": err.Error()})
+		fmt.Fprintf(w, "data: %s\n\n", errJSON)
+		flusher.Flush()
+		return
+	}
+
+	asstMsg, _ := s.store.AddMessage(pID, "assistant", turnRes.AssistantResponse)
+
+	if turnRes.ActivatedAgent != "" {
+		s.hub.BroadcastEvent(pID, &models.WSEvent{
+			Type:  "system_status",
+			JobID: turnRes.JobID,
+			Agent: turnRes.ActivatedAgent,
+			Text:  fmt.Sprintf("⚡ %s activated for task processing", turnRes.ActivatedAgent),
+			Level: "info",
+		})
+	}
+
+	if turnRes.JobID != "" {
+		job, err := s.store.GetJob(turnRes.JobID)
+		if err == nil && s.jobQueue != nil {
+			_ = s.jobQueue.EnqueueJob(r.Context(), job)
+		}
+	}
+
+	doneJSON, _ := json.Marshal(map[string]interface{}{
+		"type":                 "done",
+		"assistant_message_id": asstMsg.ID,
+		"assistant_content":    turnRes.AssistantResponse,
+		"job_id":               turnRes.JobID,
+		"activated_agent":      turnRes.ActivatedAgent,
+	})
+	fmt.Fprintf(w, "data: %s\n\n", doneJSON)
+	flusher.Flush()
 }
 
 func (s *Server) runAsyncJob(projectID, jobID, jobType string, payloadBytes []byte) {

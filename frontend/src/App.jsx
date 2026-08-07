@@ -260,19 +260,64 @@ export default function App() {
 
     const optUserMsg = { id: 'temp-' + Date.now(), role: 'user', content };
     setMessages((prev) => [...prev, optUserMsg]);
+    setStreamingMessage('');
 
     try {
-      const res = await fetch(`/api/v1/projects/${targetProjectID}/messages`, {
+      const res = await fetch(`/api/v1/projects/${targetProjectID}/messages/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ content, agent_payload: agentPayload }),
       });
 
-      if (res.ok) {
-        fetchMessages(targetProjectID);
+      if (!res.ok || !res.body) {
+        // Fallback to non-streaming endpoint if streaming response fails
+        const fallbackRes = await fetch(`/api/v1/projects/${targetProjectID}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ content, agent_payload: agentPayload }),
+        });
+        if (fallbackRes.ok) {
+          fetchMessages(targetProjectID);
+        }
+        return;
       }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('data: ')) {
+            const dataStr = trimmed.slice(6);
+            try {
+              const data = JSON.parse(dataStr);
+              if (data.type === 'delta' && data.delta) {
+                setStreamingMessage((prev) => prev + data.delta);
+              } else if (data.type === 'done') {
+                setStreamingMessage('');
+                fetchMessages(targetProjectID);
+              }
+            } catch (err) {
+              // Ignore non-JSON raw chunks
+            }
+          }
+        }
+      }
+      setStreamingMessage('');
+      fetchMessages(targetProjectID);
     } catch (e) {
-      console.error('Error sending message:', e);
+      console.error('Error in streaming message send:', e);
+      setStreamingMessage('');
+      fetchMessages(targetProjectID);
     }
   };
 
