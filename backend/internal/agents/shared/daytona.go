@@ -31,43 +31,17 @@ type DaytonaClient struct {
 }
 
 func NewDaytonaClient() *DaytonaClient {
-	c := &DaytonaClient{
+	return &DaytonaClient{
 		sandboxes: make(map[string]*DaytonaSandbox),
 		client:    &http.Client{Timeout: 10 * time.Second},
 	}
-	// Seed demo project sandbox
-	demoSb := c.GetOrCreateSandbox("proj-default")
-	demoSb.mu.Lock()
-	demoSb.Files["/main.go"] = `package main
+}
 
-import (
-	"fmt"
-	"net/http"
-)
-
-func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Hello from Daytona Cloud Sandbox!")
-	})
-	http.ListenAndServe(":8080", nil)
-}`
-	demoSb.Files["/Dockerfile"] = "FROM golang:1.22-alpine\nWORKDIR /app\nCOPY . .\nRUN go build -o server main.go\nEXPOSE 8080\nCMD [\"./server\"]"
-	demoSb.Files["/go.mod"] = "module example.com/ecommerce\n\ngo 1.22"
-	demoSb.Files["/README.md"] = "# E-Commerce Microservices Platform\nBuilt via SaaS Agentic Platform."
-
-	// Store base files for accurate git diff calculation
-	for k, v := range demoSb.Files {
-		demoSb.BaseFiles[k] = v
-	}
-
-	demoSb.GitStatus = []models.GitStatusItem{
-		{Path: "main.go", Status: "M"},
-		{Path: "Dockerfile", Status: "A"},
-		{Path: "README.md", Status: "M"},
-	}
-	demoSb.mu.Unlock()
-
-	return c
+func (c *DaytonaClient) HasSandbox(projectID string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, exists := c.sandboxes[projectID]
+	return exists
 }
 
 func (c *DaytonaClient) GetOrCreateSandbox(projectID string) *DaytonaSandbox {
@@ -83,9 +57,6 @@ func (c *DaytonaClient) GetOrCreateSandbox(projectID string) *DaytonaSandbox {
 			BaseFiles: make(map[string]string),
 			GitStatus: []models.GitStatusItem{},
 		}
-		readme := fmt.Sprintf("# Project %s\nCreated in Daytona Cloud Sandbox on %s", projectID, time.Now().Format(time.RFC3339))
-		sb.Files["/README.md"] = readme
-		sb.BaseFiles["/README.md"] = readme
 		c.sandboxes[projectID] = sb
 	}
 	return sb

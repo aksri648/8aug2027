@@ -777,6 +777,13 @@ func (s *Server) handleGetGitStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !s.daytonaClient.HasSandbox(pID) {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"uncommitted": []interface{}{},
+		})
+		return
+	}
+
 	sb := s.daytonaClient.GetOrCreateSandbox(pID)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"uncommitted": sb.GetGitStatus(),
