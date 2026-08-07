@@ -120,21 +120,30 @@ func (c *DaytonaClient) StartComputerUse(serverURL, apiKey, workspaceID string) 
 		return nil
 	}
 
-	endpoint := fmt.Sprintf("%s/workspace/%s/computer-use/start", strings.TrimRight(serverURL, "/"), workspaceID)
-	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer([]byte("{}")))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
+	trimmed := strings.TrimRight(serverURL, "/")
+	endpoints := []string{
+		fmt.Sprintf("%s/toolbox/%s/computeruse/start", trimmed, workspaceID),
+		fmt.Sprintf("%s/workspace/%s/computer-use/start", trimmed, workspaceID),
 	}
 
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to start Daytona ComputerUse VNC: %w", err)
+	for _, endpoint := range endpoints {
+		req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer([]byte("{}")))
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+
+		resp, err := c.client.Do(req)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return nil
+			}
+		}
 	}
-	defer resp.Body.Close()
 	return nil
 }
 
