@@ -102,21 +102,7 @@ func (s *Store) seedDefaultData() {
 		s.db.Create(defaultUser)
 	}
 
-	// Seed Demo Project
-	var projCount int64
-	s.db.Model(&models.Project{}).Where("id = ?", "proj-default").Count(&projCount)
-	if projCount == 0 {
-		demoProject := &models.Project{
-			ID:           "proj-default",
-			UserID:       "user-default",
-			Name:         "E-Commerce Microservices Platform",
-			Status:       "building",
-			GitRemoteURL: "https://github.com/example/ecommerce-app.git",
-			CreatedAt:    time.Now(),
-			UpdatedAt:    time.Now(),
-		}
-		s.db.Create(demoProject)
-	}
+
 
 	// Seed Default Skill
 	var skillCount int64

@@ -13,7 +13,7 @@ import LivePreviewModal from './components/modals/LivePreviewModal';
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activeProjectID, setActiveProjectID] = useState('proj-default');
+  const [activeProjectID, setActiveProjectID] = useState(null);
   const [activeProject, setActiveProject] = useState(null);
   const [projects, setProjects] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -162,9 +162,10 @@ export default function App() {
         const data = await res.json();
         setActiveProject(data);
       } else if (res.status === 404) {
-        // Stale or deleted project ID: fallback to default project
-        console.warn(`Project ${pID} not found (404). Falling back to proj-default.`);
-        setActiveProjectID('proj-default');
+        // Stale or deleted project ID: reset to null and refresh list
+        console.warn(`Project ${pID} not found (404). Resetting active project.`);
+        setActiveProjectID(null);
+        setActiveProject(null);
         fetchProjects();
       }
     } catch (e) {
