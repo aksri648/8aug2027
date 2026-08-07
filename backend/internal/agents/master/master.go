@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/saas-agent-platform/backend/internal/agents/shared"
+	"github.com/saas-agent-platform/backend/internal/llm"
 	"github.com/saas-agent-platform/backend/internal/store"
 )
 
@@ -23,12 +25,14 @@ const (
 type MasterAgent struct {
 	store         *store.Store
 	daytonaClient *shared.DaytonaClient
+	llmClient     *llm.LLMClient
 }
 
 func NewMasterAgent(s *store.Store, dc *shared.DaytonaClient) *MasterAgent {
 	return &MasterAgent{
 		store:         s,
 		daytonaClient: dc,
+		llmClient:     llm.NewLLMClient(),
 	}
 }
 
@@ -92,7 +96,7 @@ func (m *MasterAgent) ExecuteTool(projectID string, tc ToolCall) (*ToolResult, e
 	}
 }
 
-func (m *MasterAgent) ClassifyIntent(prompt string) Intent {
+func (m *MasterAgent) ClassifyIntentFallback(prompt string) Intent {
 	lower := strings.ToLower(prompt)
 	if strings.Contains(lower, "build") || strings.Contains(lower, "create") || strings.Contains(lower, "write app") || strings.Contains(lower, "generate") || strings.Contains(lower, "make a") || strings.Contains(lower, "develop") || strings.Contains(lower, "[app developer agent]") {
 		return IntentBuildApp
@@ -117,8 +121,61 @@ type TurnResult struct {
 	JobPayload        []byte
 }
 
+type LLMPlanAndRouting struct {
+	AssistantResponse string   `json:"assistant_response"`
+	Action            string   `json:"action"` // build_app, deploy_app, deploy_llm, maintain_app, general
+	PlanSteps         []string `json:"plan_steps,omitempty"`
+}
+
 func (m *MasterAgent) ProcessTurn(ctx context.Context, projectID string, prompt string, extraPayload map[string]interface{}) (*TurnResult, error) {
-	intent := m.ClassifyIntent(prompt)
+	intent := m.ClassifyIntentFallback(prompt)
+	assistantMsg := ""
+
+	// Dynamic LLM Planning & Routing
+	if m.llmClient.HasCredentials() {
+		log.Printf("🧠 Invoking Master Agent LLM Planning & Routing for prompt: '%s'...", prompt)
+		systemPrompt := `You are the Lead Master AI Architect & Orchestrator of an Autonomous SaaS Development Platform.
+Analyze the user request and generate a structured developer plan and routing action.
+Your response MUST be a JSON object in this exact schema:
+{
+  "assistant_response": "Your natural language response to the user explaining the architecture, plan, and agent activation",
+  "action": "build_app" | "deploy_app" | "deploy_llm" | "maintain_app" | "general",
+  "plan_steps": ["Step 1: ...", "Step 2: ..."]
+}`
+		userPrompt := fmt.Sprintf("User Request: %s\nProject ID: %s", prompt, projectID)
+
+		llmOut, err := m.llmClient.Complete(ctx, systemPrompt, userPrompt)
+		if err == nil {
+			cleaned := strings.TrimSpace(llmOut)
+			if strings.HasPrefix(cleaned, "```json") {
+				cleaned = strings.TrimPrefix(cleaned, "```json")
+				cleaned = strings.TrimSuffix(cleaned, "```")
+			} else if strings.HasPrefix(cleaned, "```") {
+				cleaned = strings.TrimPrefix(cleaned, "```")
+				cleaned = strings.TrimSuffix(cleaned, "```")
+			}
+			cleaned = strings.TrimSpace(cleaned)
+
+			var plan LLMPlanAndRouting
+			if json.Unmarshal([]byte(cleaned), &plan) == nil && plan.Action != "" {
+				assistantMsg = plan.AssistantResponse
+				switch plan.Action {
+				case "build_app":
+					intent = IntentBuildApp
+				case "deploy_app":
+					intent = IntentDeployApp
+				case "deploy_llm":
+					intent = IntentDeployLLM
+				case "maintain_app":
+					intent = IntentMaintainApp
+				case "general":
+					intent = IntentGeneralOther
+				}
+			}
+		} else {
+			log.Printf("⚠️ Master Agent LLM planning fallback (%v). Using rule-based intent router.", err)
+		}
+	}
 
 	payloadMap := map[string]string{
 		"prompt":     prompt,
@@ -139,12 +196,15 @@ func (m *MasterAgent) ProcessTurn(ctx context.Context, projectID string, prompt 
 		if err != nil {
 			return nil, err
 		}
-		stackMsg := ""
-		if s, ok := payloadMap["stack"]; ok && s != "" {
-			stackMsg = fmt.Sprintf(" using stack **%s**", s)
+		if assistantMsg == "" {
+			stackMsg := ""
+			if s, ok := payloadMap["stack"]; ok && s != "" {
+				stackMsg = fmt.Sprintf(" using stack **%s**", s)
+			}
+			assistantMsg = fmt.Sprintf("I've activated the **App Developer Agent** to build out your application%s based on your prompt requirements.", stackMsg)
 		}
 		return &TurnResult{
-			AssistantResponse: fmt.Sprintf("I've activated the **App Developer Agent** to build out your application%s based on your prompt requirements.", stackMsg),
+			AssistantResponse: assistantMsg,
 			ActivatedAgent:    "App Developer Agent",
 			JobID:             job.ID,
 			JobType:           "codegen",
@@ -156,22 +216,24 @@ func (m *MasterAgent) ProcessTurn(ctx context.Context, projectID string, prompt 
 		if err != nil {
 			return nil, err
 		}
-		vmSize := payloadMap["vm_size"]
-		if vmSize == "" {
-			vmSize = payloadMap["vmSize"]
-		}
-		region := payloadMap["azure_region"]
-		if region == "" {
-			region = payloadMap["azureRegion"]
-		}
+		if assistantMsg == "" {
+			vmSize := payloadMap["vm_size"]
+			if vmSize == "" {
+				vmSize = payloadMap["vmSize"]
+			}
+			region := payloadMap["azure_region"]
+			if region == "" {
+				region = payloadMap["azureRegion"]
+			}
 
-		infoStr := ""
-		if vmSize != "" || region != "" {
-			infoStr = fmt.Sprintf(" (Target: VM Size %s, Region %s)", vmSize, region)
+			infoStr := ""
+			if vmSize != "" || region != "" {
+				infoStr = fmt.Sprintf(" (Target: VM Size %s, Region %s)", vmSize, region)
+			}
+			assistantMsg = fmt.Sprintf("Activated **App Deployer Agent**%s. Inspecting sandbox codebase, building container definition, and provisioning Azure infrastructure.", infoStr)
 		}
-
 		return &TurnResult{
-			AssistantResponse: fmt.Sprintf("Activated **App Deployer Agent**%s. Inspecting sandbox codebase, building container definition, and provisioning Azure infrastructure.", infoStr),
+			AssistantResponse: assistantMsg,
 			ActivatedAgent:    "App Deployer Agent",
 			JobID:             job.ID,
 			JobType:           "deploy_app",
@@ -183,12 +245,15 @@ func (m *MasterAgent) ProcessTurn(ctx context.Context, projectID string, prompt 
 		if err != nil {
 			return nil, err
 		}
-		modelRepo := payloadMap["model_repo_id"]
-		if modelRepo == "" {
-			modelRepo = payloadMap["modelRepo"]
+		if assistantMsg == "" {
+			modelRepo := payloadMap["model_repo_id"]
+			if modelRepo == "" {
+				modelRepo = payloadMap["modelRepo"]
+			}
+			assistantMsg = fmt.Sprintf("Activated **LLM Deployer Agent** for model `%s`. Provisioning dedicated GPU infrastructure and vLLM / NIM serving endpoint.", modelRepo)
 		}
 		return &TurnResult{
-			AssistantResponse: fmt.Sprintf("Activated **LLM Deployer Agent** for model `%s`. Provisioning dedicated GPU infrastructure and vLLM / NIM serving endpoint.", modelRepo),
+			AssistantResponse: assistantMsg,
 			ActivatedAgent:    "LLM Deployer Agent",
 			JobID:             job.ID,
 			JobType:           "deploy_llm",
@@ -200,8 +265,11 @@ func (m *MasterAgent) ProcessTurn(ctx context.Context, projectID string, prompt 
 		if err != nil {
 			return nil, err
 		}
+		if assistantMsg == "" {
+			assistantMsg = "Activated **App Maintainer Agent**. Inspecting repository in Daytona sandbox, diagnosing issue, applying fix, and running verification tests."
+		}
 		return &TurnResult{
-			AssistantResponse: "Activated **App Maintainer Agent**. Inspecting repository in Daytona sandbox, diagnosing issue, applying fix, and running verification tests.",
+			AssistantResponse: assistantMsg,
 			ActivatedAgent:    "App Maintainer Agent",
 			JobID:             job.ID,
 			JobType:           "maintain_app",
@@ -209,8 +277,11 @@ func (m *MasterAgent) ProcessTurn(ctx context.Context, projectID string, prompt 
 		}, nil
 
 	default:
+		if assistantMsg == "" {
+			assistantMsg = fmt.Sprintf("I am your AI SaaS Development Assistant powered by Google ADK and Daytona Sandboxes. You asked: \"%s\". How can I assist you with building code, provisioning Azure infrastructure, deploying open-weight LLMs, or diagnosing bugs?", prompt)
+		}
 		return &TurnResult{
-			AssistantResponse: fmt.Sprintf("I am your AI SaaS Development Assistant powered by Google ADK and Daytona Sandboxes. You asked: \"%s\". How can I assist you with building code, provisioning Azure infrastructure, deploying open-weight LLMs, or diagnosing bugs?", prompt),
+			AssistantResponse: assistantMsg,
 			ActivatedAgent:    "Master Agent",
 		}, nil
 	}
