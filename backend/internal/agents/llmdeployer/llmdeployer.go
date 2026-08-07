@@ -73,10 +73,15 @@ func (l *LLMDeployerAgent) ExecuteDeployJob(ctx context.Context, jobID, projectI
 		return nil, fmt.Errorf("%s", errStr)
 	}
 
+	gpuIP := os.Getenv("LLM_GPU_PUBLIC_IP")
+	if gpuIP == "" {
+		gpuIP = "10.0.1.100"
+	}
+
 	res := &DeployLLMResult{
 		ModelRepoID:  modelRepo,
 		Topology:     topology,
-		EndpointURL:  "http://20.120.88.102:8000",
+		EndpointURL:  fmt.Sprintf("http://%s:8000", gpuIP),
 		Port:         8000,
 		APIPath:      "/v1/chat/completions",
 		AuthRequired: true,

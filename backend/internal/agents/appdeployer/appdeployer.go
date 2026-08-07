@@ -235,7 +235,7 @@ func (a *AppDeployerAgent) ProvisionAzureVM(subID, token, rgName, vmName, locati
 			"osProfile": map[string]string{
 				"computerName":  vmName,
 				"adminUsername": "azureuser",
-				"adminPassword": "SecureP@ssw0rd2026!",
+				"adminPassword": getVMAdminPassword(rgName),
 			},
 		},
 	}
@@ -259,4 +259,12 @@ func (a *AppDeployerAgent) ProvisionAzureVM(subID, token, rgName, vmName, locati
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 	return nil
+}
+
+func getVMAdminPassword(identifier string) string {
+	pass := os.Getenv("AZURE_VM_ADMIN_PASSWORD")
+	if pass != "" {
+		return pass
+	}
+	return fmt.Sprintf("P@ss-%s-2026!", safeSlug(identifier))
 }
