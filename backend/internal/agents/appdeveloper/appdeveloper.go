@@ -4,22 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"github.com/saas-agent-platform/backend/internal/agents/shared"
+	"github.com/saas-agent-platform/backend/internal/llm"
 	"github.com/saas-agent-platform/backend/internal/store"
 )
 
 type AppDeveloperAgent struct {
 	store         *store.Store
 	daytonaClient *shared.DaytonaClient
+	llmClient     *llm.LLMClient
 }
 
 func NewAppDeveloperAgent(s *store.Store, dc *shared.DaytonaClient) *AppDeveloperAgent {
 	return &AppDeveloperAgent{
 		store:         s,
 		daytonaClient: dc,
+		llmClient:     llm.NewLLMClient(),
 	}
 }
 
@@ -42,10 +46,24 @@ func (a *AppDeveloperAgent) ExecuteCodegenJob(ctx context.Context, jobID, projec
 	files := make(map[string]string)
 	description := fmt.Sprintf("Generated %s application based on prompt: '%s'", stack, prompt)
 
-	lowerStack := strings.ToLower(stack)
+	// Attempt dynamic code generation via real LLM API
+	if a.llmClient.HasCredentials() {
+		log.Printf("🤖 Invoking LLM API for dynamic code generation (Stack: %s, Prompt: %s)...", stack, prompt)
+		llmFiles, err := a.llmClient.GenerateCodeFiles(ctx, prompt, stack)
+		if err == nil && len(llmFiles) > 0 {
+			files = llmFiles
+			description = fmt.Sprintf("Dynamically generated %d files via LLM API for stack '%s'", len(files), stack)
+		} else {
+			log.Printf("⚠️ LLM generation fallback (%v). Using structured starter generator.", err)
+		}
+	}
 
-	if strings.Contains(lowerStack, "react") {
-		files["/package.json"] = `{
+	// Fallback structured stack generator if LLM API credentials not configured
+	if len(files) == 0 {
+		lowerStack := strings.ToLower(stack)
+
+		if strings.Contains(lowerStack, "react") {
+			files["/package.json"] = `{
   "name": "react-sandbox-app",
   "private": true,
   "version": "1.0.0",
@@ -65,7 +83,7 @@ func (a *AppDeveloperAgent) ExecuteCodegenJob(ctx context.Context, jobID, projec
     "vite": "^5.2.11"
   }
 }`
-		files["/index.html"] = `<!DOCTYPE html>
+			files["/index.html"] = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -76,7 +94,7 @@ func (a *AppDeveloperAgent) ExecuteCodegenJob(ctx context.Context, jobID, projec
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>`
-		files["/src/main.jsx"] = `import React from 'react'
+			files["/src/main.jsx"] = `import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 
@@ -85,7 +103,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
   </React.StrictMode>,
 )`
-		files["/src/App.jsx"] = fmt.Sprintf(`import React from 'react';
+			files["/src/App.jsx"] = fmt.Sprintf(`import React from 'react';
 
 export default function App() {
   return (
@@ -98,10 +116,10 @@ export default function App() {
     </div>
   );
 }`, prompt)
-		files["/README.md"] = fmt.Sprintf("# React + Vite App\nGenerated for: %s\n\n## Run\n```bash\nnpm run dev\n```", prompt)
+			files["/README.md"] = fmt.Sprintf("# React + Vite App\nGenerated for: %s\n\n## Run\n```bash\nnpm run dev\n```", prompt)
 
-	} else if strings.Contains(lowerStack, "python") || strings.Contains(lowerStack, "fastapi") {
-		files["/main.py"] = fmt.Sprintf(`from fastapi import FastAPI
+		} else if strings.Contains(lowerStack, "python") || strings.Contains(lowerStack, "fastapi") {
+			files["/main.py"] = fmt.Sprintf(`from fastapi import FastAPI
 from datetime import datetime
 
 app = FastAPI(title="FastAPI Service", description="Generated for %s")
@@ -114,18 +132,18 @@ def health_check():
 def get_data():
     return {"prompt": "%s", "items": [{"id": 1, "name": "Python FastAPI Item"}]}
 `, prompt, prompt)
-		files["/requirements.txt"] = "fastapi==0.111.0\nuvicorn==0.30.0\npydantic==2.7.1"
-		files["/Dockerfile"] = `FROM python:3.11-slim
+			files["/requirements.txt"] = "fastapi==0.111.0\nuvicorn==0.30.0\npydantic==2.7.1"
+			files["/Dockerfile"] = `FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 EXPOSE 8000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]`
-		files["/README.md"] = fmt.Sprintf("# Python FastAPI Microservice\nGenerated for: %s\n\n## Run\n```bash\nuvicorn main:app --reload\n```", prompt)
+			files["/README.md"] = fmt.Sprintf("# Python FastAPI Microservice\nGenerated for: %s\n\n## Run\n```bash\nuvicorn main:app --reload\n```", prompt)
 
-	} else if strings.Contains(lowerStack, "next") {
-		files["/package.json"] = `{
+		} else if strings.Contains(lowerStack, "next") {
+			files["/package.json"] = `{
   "name": "nextjs-app",
   "version": "1.0.0",
   "scripts": {
@@ -139,7 +157,7 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]`
     "react-dom": "^18.3.1"
   }
 }`
-		files["/app/page.tsx"] = fmt.Sprintf(`export default function Home() {
+			files["/app/page.tsx"] = fmt.Sprintf(`export default function Home() {
   return (
     <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
       <h1>Next.js Fullstack App</h1>
@@ -147,16 +165,16 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]`
     </main>
   );
 }`, prompt)
-		files["/app/api/health/route.ts"] = `import { NextResponse } from 'next/server';
+			files["/app/api/health/route.ts"] = `import { NextResponse } from 'next/server';
 
 export async function GET() {
   return NextResponse.json({ status: 'ok', timestamp: new Date().toISOString() });
 }`
-		files["/README.md"] = fmt.Sprintf("# Next.js App\nGenerated for: %s", prompt)
+			files["/README.md"] = fmt.Sprintf("# Next.js App\nGenerated for: %s", prompt)
 
-	} else {
-		// Go REST API Default
-		files["/cmd/api/main.go"] = fmt.Sprintf(`package main
+		} else {
+			// Go REST API Default
+			files["/cmd/api/main.go"] = fmt.Sprintf(`package main
 
 import (
 	"encoding/json"
@@ -191,8 +209,8 @@ func main() {
 	log.Println("Starting service on :8080...")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }`, prompt, prompt)
-		files["/go.mod"] = "module github.com/user/app\n\ngo 1.22"
-		files["/Dockerfile"] = `FROM golang:1.22-alpine AS builder
+			files["/go.mod"] = "module github.com/user/app\n\ngo 1.22"
+			files["/Dockerfile"] = `FROM golang:1.22-alpine AS builder
 WORKDIR /app
 COPY go.mod ./
 COPY . .
@@ -203,7 +221,8 @@ WORKDIR /root/
 COPY --from=builder /app/server .
 EXPOSE 8080
 CMD ["./server"]`
-		files["/README.md"] = fmt.Sprintf("# Generated Application\nGenerated on %s by App Developer Agent.\n\nPrompt: %s\nStack: %s\n\n## Running\n```bash\ngo run ./cmd/api/main.go\n```", time.Now().Format(time.RFC3339), prompt, stack)
+			files["/README.md"] = fmt.Sprintf("# Generated Application\nGenerated on %s by App Developer Agent.\n\nPrompt: %s\nStack: %s\n\n## Running\n```bash\ngo run ./cmd/api/main.go\n```", time.Now().Format(time.RFC3339), prompt, stack)
+		}
 	}
 
 	paths := make([]string, 0, len(files))
