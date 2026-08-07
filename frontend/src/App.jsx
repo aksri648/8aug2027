@@ -142,7 +142,11 @@ export default function App() {
           if (remaining.length > 0) {
             setActiveProjectID(remaining[0].id);
           } else {
-            handleCreateNewChat();
+            // Allow chat list to fully go empty
+            setActiveProjectID(null);
+            setActiveProject(null);
+            setMessages([]);
+            setUncommittedFiles([]);
           }
         }
       }
@@ -230,18 +234,40 @@ export default function App() {
   };
 
   const handleSendMessage = async (content, agentPayload = null) => {
+    let targetProjectID = activeProjectID;
+
+    // If no active chat exists (e.g. after deleting all chats), create new chat first
+    if (!targetProjectID || projects.length === 0) {
+      try {
+        const res = await fetch('/api/v1/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ name: `Chat ${projects.length + 1}` }),
+        });
+        if (res.ok) {
+          const created = await res.json();
+          targetProjectID = created.id;
+          setActiveProjectID(created.id);
+          setProjects([created]);
+        }
+      } catch (e) {
+        console.error('Error creating chat on message send:', e);
+        return;
+      }
+    }
+
     const optUserMsg = { id: 'temp-' + Date.now(), role: 'user', content };
     setMessages((prev) => [...prev, optUserMsg]);
 
     try {
-      const res = await fetch(`/api/v1/projects/${activeProjectID}/messages`, {
+      const res = await fetch(`/api/v1/projects/${targetProjectID}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ content, agent_payload: agentPayload }),
       });
 
       if (res.ok) {
-        fetchMessages(activeProjectID);
+        fetchMessages(targetProjectID);
       }
     } catch (e) {
       console.error('Error sending message:', e);
