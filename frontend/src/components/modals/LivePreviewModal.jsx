@@ -8,7 +8,8 @@ export default function LivePreviewModal({ isOpen, onClose, activeProjectID, act
   const [previewInfo, setPreviewInfo] = useState(null);
 
   const authToken = localStorage.getItem('auth_token');
-  const previewUrl = `/api/v1/projects/${activeProjectID}/sandbox/app${authToken ? `?token=${authToken}` : ''}`;
+  const defaultPreviewUrl = `/api/v1/projects/${activeProjectID}/sandbox/novnc${authToken ? `?token=${authToken}` : ''}`;
+  const previewUrl = previewInfo?.novnc_url || previewInfo?.preview_url || defaultPreviewUrl;
 
   useEffect(() => {
     if (isOpen) {

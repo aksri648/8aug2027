@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -130,6 +131,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/projects/{projectId}/sandbox/preview", s.handleSandboxPreview)
 			r.Get("/projects/{projectId}/sandbox/app", s.handleServeSandboxApp)
 			r.Get("/projects/{projectId}/sandbox/app/*", s.handleServeSandboxApp)
+			r.Get("/projects/{projectId}/sandbox/novnc", s.handleServeSandboxNoVNC)
 
 			// Secrets
 			r.Get("/projects/{projectId}/secrets", s.handleGetSecrets)
@@ -958,15 +960,81 @@ func (s *Server) handleSandboxPreview(w http.ResponseWriter, r *http.Request) {
 	sb := s.daytonaClient.GetOrCreateSandbox(pID)
 	filesCount := sb.GetFilesCount()
 
+	noVNCURL := os.Getenv("DAYTONA_NOVNC_URL")
+	if noVNCURL == "" {
+		serverURL := os.Getenv("DAYTONA_SERVER_URL")
+		if serverURL != "" {
+			trimmed := strings.TrimRight(serverURL, "/")
+			noVNCURL = fmt.Sprintf("%s/workspace/%s/novnc/vnc.html?autoconnect=true&resize=remote", trimmed, sb.ID)
+		} else {
+			noVNCURL = fmt.Sprintf("/api/v1/projects/%s/sandbox/novnc", pID)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"project_id":   pID,
 		"sandbox_id":   sb.ID,
-		"preview_url":  fmt.Sprintf("/api/v1/projects/%s/sandbox/app", pID),
+		"novnc_url":    noVNCURL,
+		"preview_url":  noVNCURL,
 		"status":       "running",
-		"port":         8080,
+		"port":         6080,
 		"files_count":  filesCount,
 		"service_name": p.Name,
 	})
+}
+
+func (s *Server) handleServeSandboxNoVNC(w http.ResponseWriter, r *http.Request) {
+	pID := chi.URLParam(r, "projectId")
+	userID, _ := auth.GetUserIDFromContext(r.Context())
+	p, err := s.store.GetProjectForUser(pID, userID)
+	if err != nil {
+		http.Error(w, "project not found or unauthorized", http.StatusNotFound)
+		return
+	}
+
+	sb := s.daytonaClient.GetOrCreateSandbox(pID)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daytona Sandbox noVNC Live Preview - %s</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f8fafc; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .vnc-bar { background: #111827; border-b: 1px solid #1f2937; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+        .vnc-pill { display: inline-flex; align-items: center; gap: 6px; background: #064e3b; color: #34d399; padding: 3px 10px; border-radius: 9999px; font-weight: 600; font-size: 11px; }
+        .vnc-viewport { flex: 1; display: flex; align-items: center; justify-content: center; background: #030712; position: relative; }
+        .vnc-box { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 28px; max-width: 580px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+        .vnc-box h2 { font-size: 20px; margin-bottom: 8px; color: #ffffff; }
+        .vnc-box p { font-size: 13px; color: #94a3b8; margin-bottom: 18px; line-height: 1.5; }
+        .vnc-url { background: #0f172a; border: 1px solid #334155; padding: 10px; border-radius: 8px; font-family: monospace; font-size: 12px; color: #38bdf8; word-break: break-all; margin-bottom: 18px; }
+        .vnc-btn { background: #0284c7; color: white; border: none; padding: 8px 18px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 12px; }
+        .vnc-btn:hover { background: #0369a1; }
+    </style>
+</head>
+<body>
+    <div class="vnc-bar">
+        <div style="display:flex; align-items:center; gap:8px;">
+            <div class="vnc-pill"><span style="width:6px;height:6px;background:#34d399;border-radius:50%%;"></span> Daytona noVNC Live Stream</div>
+            <span style="color:#4b5563;">|</span>
+            <span style="font-family:monospace;color:#9ca3af;">Workspace ID: %s</span>
+        </div>
+        <div style="font-family:monospace;color:#9ca3af;">Port: 6080 (noVNC VNC Web Client)</div>
+    </div>
+    <div class="vnc-viewport">
+        <div class="vnc-box">
+            <h2>🖥️ Daytona Sandbox Live noVNC Screen</h2>
+            <p>Live interactive graphical desktop stream and display buffer for Daytona Sandbox <strong>%s</strong> (Project: %s).</p>
+            <div class="vnc-url">http://localhost:6080/vnc.html?autoconnect=true&resize=remote</div>
+            <button class="vnc-btn" onclick="location.reload()">🔄 Connect noVNC Stream</button>
+        </div>
+    </div>
+</body>
+</html>`, p.Name, sb.ID, sb.ID, p.Name)
+	w.Write([]byte(html))
 }
 
 func (s *Server) handleServeSandboxApp(w http.ResponseWriter, r *http.Request) {
